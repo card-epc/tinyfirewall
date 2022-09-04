@@ -101,34 +101,35 @@ static struct nf_hook_ops test_nf_ops[] = {
   },
 };
 
-static int __net_init test_netfilter_init(struct net *net) {
+static int __net_init test_netfilter_init(void) {
     nlsock = netlink_kernel_create(&init_net, USER_MSG, &cfg);
     if (NULL == nlsock) {
         printk("SOCK CREATE ERROR");
         return -1;
     }
-    return nf_register_net_hooks(net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
+    printk("SOCK CREATE SUCCESS");
+    return nf_register_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 
-static void __net_exit test_netfilter_exit(struct net *net) {
+static void __net_exit test_netfilter_exit(void) {
     sock_release(nlsock->sk_socket);
-    nf_unregister_net_hooks(net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
+    nf_unregister_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 
-static struct pernet_operations test_netfilter_ops = {
-    .init = test_netfilter_init,
-    .exit = test_netfilter_exit,
-};
+/* static struct pernet_operations test_netfilter_ops = { */
+/*     .init = test_netfilter_init, */
+/*     .exit = test_netfilter_exit, */
+/* }; */
 
-static int __init test_module_init(void) {
-    return register_pernet_subsys(&test_netfilter_ops);  
-}
+/* static int __init test_module_init(void) { */
+/*     return register_pernet_subsys(&test_netfilter_ops);   */
+/* } */
+/*  */
+/* static void __exit test_module_exit(void) { */
+/*     unregister_pernet_subsys(&test_netfilter_ops);   */
+/* } */
 
-static void __exit test_module_exit(void) {
-    unregister_pernet_subsys(&test_netfilter_ops);  
-}
-
-module_init(test_module_init);
-module_exit(test_module_exit);
+module_init(test_netfilter_init);
+module_exit(test_netfilter_exit);
 
 MODULE_LICENSE("GPL");

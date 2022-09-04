@@ -1,1 +1,0 @@
-cmd_/home/seed/myfirewall/test_netfilter.ko := ld -r -m elf_x86_64  -z max-page-size=0x200000  --build-id  -T ./scripts/module-common.lds -o /home/seed/myfirewall/test_netfilter.ko /home/seed/myfirewall/test_netfilter.o /home/seed/myfirewall/test_netfilter.mod.o;  true
