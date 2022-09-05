@@ -8,6 +8,6 @@ all:
 clean:
 	$(MAKE) -C $(MODPATH) clean && $(MAKE) -C $(USRPATH) clean
 load:
-	sudo insmod test_netfilter.ko
+	sudo insmod kmodule/test_netfilter.ko
 unload:
 	sudo rmmod test_netfilter

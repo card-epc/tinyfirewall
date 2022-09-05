@@ -11,8 +11,10 @@
 #include <linux/in_route.h>
 #include <net/ip.h>
 #include <linux/mutex.h>
-#include <linux/list.h>
+#include <linux/hashtable.h>
 #include <linux/types.h>
+#include "message.h"
+#include "state_hashtable.h"
 
 #define USER_MSG  24
 #define USER_PORT 50
@@ -23,19 +25,13 @@
 
 static struct sock* nlsock = NULL;
 
-struct numlist {
-    struct hlist_head* hlistHead;
-};
 
-struct numnode {
-    int value;
-    struct hlist_node* hlistNode;
-};
+typedef struct hlist_head st_hashlistHead;
 
-struct numlist tbhead;
-struct numnode tbnode;
 
-static int sendtouser(const char* buf, uint32_t len) {
+
+
+static int32_t sendtouser(const char* buf, uint32_t len) {
 
     struct sk_buff* nl_skb;
     struct nlmsghdr* nl_hdr;
@@ -76,32 +72,90 @@ struct netlink_kernel_cfg cfg = {
     .input = recvfromuser,
 };
 
-static uint32_t check_tcp_status(const struct tcp_hdr* tcphdr) {
+static uint8_t get_TCP_sign(const struct tcphdr* head) {
+    if (head->rst) {
+        return RST;
+    } else if (head->syn) {
+        return (head->ack) ? (SYNACK) : (SYN);
+    } else if (head->fin) {
+        return (head->ack) ? (FINACK) : (FIN);
+    } else if (head->ack) {
+        return ACK;
+    }
+    return UNDEFINED;
+}
+
+static int32_t check_firewall_rules(const struct sk_buff *citem) {
+    return 1;
+}
+
+static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10][6], int8_t isIn) {
+    int8_t stateTemp;
+    StatusTableItem* retItemptr;
+    struct iphdr* ipHeader = ip_hdr(skb);
+    struct tcphdr* tcpHeader = tcp_hdr(skb);
+    
+    StatusTableItem temp = {
+        .proto = TCP,
+        .iport.foren_ip = isIn ? ipHeader->saddr : ipHeader->daddr,
+        .iport.local_ip = isIn ? ipHeader->daddr : ipHeader->saddr,
+        .iport.fport = isIn ? htons(tcpHeader->source) : htons(tcpHeader->dest),
+        .iport.lport = isIn ? htons(tcpHeader->dest) : htons(tcpHeader->source),
+        .state = get_TCP_sign(tcpHeader),
+    };
+    
+
+    /* retItemptr = statehashTable_exist(&temp); */
+    /* if (tcpHeader->fin) { */
+    /*     printk("FIN PKT RECVED : NOW STATE %d", retItemptr->state); */
+    /* } */
+    /* if (retItemptr) { */
+    /*     stateTemp = trans_buf[retItemptr->state][temp.state]; */
+    /*     // -1 means maintain old state */
+    /*     if (stateTemp != -1) { */
+    /*         if (stateTemp == CLOSED) { */
+    /*             printk("DELETE ONE FROM TABLE"); */
+    /*             statehashTable_del(retItemptr); */
+    /*         } else { */
+    /*             printk("STATE CHANGE from %d to %d", retItemptr->state, stateTemp); */
+    /*             retItemptr->state = stateTemp; */
+    /*         } */
+    /*     } */
+    /*     return NF_ACCEPT; */
+    /* } else if(check_firewall_rules(skb)) { */
+    /*     printk("PASS FIREWALL"); */
+    /*     temp.state = trans_buf[0][temp.state]; */
+    /*     printk("FIRST CATCH STATE : %d", temp.state); */
+    /*     statehashTable_add(&temp); */
+    /*     return NF_ACCEPT; */
+    /* } else { */
+    /*     return NF_DROP; */
+    /* } */
+    
+    printk("*******TCP********");
+    printIPaddr(skb);
+    printTransPort(skb);
+    printTcpFlags(skb);
+    printk("*******END********");
+    printk(" ");
     return NF_ACCEPT;
 }
 
-void printIPaddr(uint32_t ipaddr) {
-    printk("%d.%d.%d.%d", *((uint8_t*)(&ipaddr) + 0), *((uint8_t*)(&ipaddr) + 1),
-                          *((uint8_t*)(&ipaddr) + 2), *((uint8_t*)(&ipaddr) + 3));
-}
 
 
 static uint32_t test_nf_pre_routing(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
     const struct iphdr *ipheader = ip_hdr(skb);
     /* const struct tcphdr* tcpheader = tcp_hdr(skb); */
-    printk("this is test_nf_pre_routing 111");
-    printk("out name : %s", state->out->name);
-    printk("in  name : %s", state->in->name);
-    uint32_t sip = ipheader->saddr;
-    uint32_t dip = ipheader->daddr;
-    printIPaddr(sip);
-    printIPaddr(dip);
-    printk("Protocol %d", ipheader->protocol);
+    /* printk("this is test_nf_pre_routing 111"); */
+    /* printk("out name : %s", state->out->name); */
+    /* printk("in  name : %s", state->in->name); */
+    /* printIPaddr(skb); */
+    /* printk("Protocol %d", ipheader->protocol); */
     switch (ipheader->protocol) {
         case ICMP:
-            
             break;
         case TCP:
+            check_tcp_status(skb, in_tcp_state_tranform_buf, 1);
             break;
         case UDP:
             break;
@@ -115,9 +169,22 @@ static uint32_t test_nf_pre_routing(void *priv, struct sk_buff *skb, const struc
 
 
 static uint32_t test_nf_post_routing(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
-    printk("this is test_nf_local_output 666");
-    printk("out name : %s", state->out->name);
-    printk("in  name : %s", state->in->name);
+    /* printk("this is test_nf_local_output 666"); */
+    /* printk("out name : %s", state->out->name); */
+    /* printk("in  name : %s", state->in->name); */
+    const struct iphdr *ipheader = ip_hdr(skb);
+    switch (ipheader->protocol) {
+        case ICMP:
+            break;
+        case TCP:
+            check_tcp_status(skb, out_tcp_state_tranform_buf, 0);
+            break;
+        case UDP:
+            break;
+        default:
+            return NF_ACCEPT;
+            
+    }
     return NF_ACCEPT;
 }
 
@@ -143,11 +210,13 @@ static int __net_init test_netfilter_init(void) {
         return -1;
     }
     printk("SOCK CREATE SUCCESS");
+    statehashTable_init();
     return nf_register_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 
 static void __net_exit test_netfilter_exit(void) {
     sock_release(nlsock->sk_socket);
+    statehashTable_exit();
     nf_unregister_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 
