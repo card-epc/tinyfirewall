@@ -8,14 +8,32 @@
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_arp.h>
 #include <linux/netlink.h>
-#include <uapi/linux/netlink.h>
 #include <linux/in_route.h>
 #include <net/ip.h>
+#include <linux/mutex.h>
+#include <linux/list.h>
+#include <linux/types.h>
 
 #define USER_MSG  24
 #define USER_PORT 50
 
+#define ICMP  1
+#define TCP   6
+#define UDP  17
+
 static struct sock* nlsock = NULL;
+
+struct numlist {
+    struct hlist_head* hlistHead;
+};
+
+struct numnode {
+    int value;
+    struct hlist_node* hlistNode;
+};
+
+struct numlist tbhead;
+struct numnode tbnode;
 
 static int sendtouser(const char* buf, uint32_t len) {
 
@@ -58,14 +76,19 @@ struct netlink_kernel_cfg cfg = {
     .input = recvfromuser,
 };
 
+static uint32_t check_tcp_status(const struct tcp_hdr* tcphdr) {
+    return NF_ACCEPT;
+}
+
 void printIPaddr(uint32_t ipaddr) {
     printk("%d.%d.%d.%d", *((uint8_t*)(&ipaddr) + 0), *((uint8_t*)(&ipaddr) + 1),
                           *((uint8_t*)(&ipaddr) + 2), *((uint8_t*)(&ipaddr) + 3));
 }
 
 
-static unsigned int test_nf_pre_routing(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
+static uint32_t test_nf_pre_routing(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
     const struct iphdr *ipheader = ip_hdr(skb);
+    /* const struct tcphdr* tcpheader = tcp_hdr(skb); */
     printk("this is test_nf_pre_routing 111");
     printk("out name : %s", state->out->name);
     printk("in  name : %s", state->in->name);
@@ -74,12 +97,24 @@ static unsigned int test_nf_pre_routing(void *priv, struct sk_buff *skb, const s
     printIPaddr(sip);
     printIPaddr(dip);
     printk("Protocol %d", ipheader->protocol);
+    switch (ipheader->protocol) {
+        case ICMP:
+            
+            break;
+        case TCP:
+            break;
+        case UDP:
+            break;
+        default:
+            return NF_ACCEPT;
+            
+    }
     /* return NF_DROP; */
     return NF_ACCEPT;
 }
 
 
-static unsigned int test_nf_post_routing(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
+static uint32_t test_nf_post_routing(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
     printk("this is test_nf_local_output 666");
     printk("out name : %s", state->out->name);
     printk("in  name : %s", state->in->name);
