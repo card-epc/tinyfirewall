@@ -105,32 +105,32 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
     };
     
 
-    /* retItemptr = statehashTable_exist(&temp); */
-    /* if (tcpHeader->fin) { */
-    /*     printk("FIN PKT RECVED : NOW STATE %d", retItemptr->state); */
-    /* } */
-    /* if (retItemptr) { */
-    /*     stateTemp = trans_buf[retItemptr->state][temp.state]; */
-    /*     // -1 means maintain old state */
-    /*     if (stateTemp != -1) { */
-    /*         if (stateTemp == CLOSED) { */
-    /*             printk("DELETE ONE FROM TABLE"); */
-    /*             statehashTable_del(retItemptr); */
-    /*         } else { */
-    /*             printk("STATE CHANGE from %d to %d", retItemptr->state, stateTemp); */
-    /*             retItemptr->state = stateTemp; */
-    /*         } */
-    /*     } */
-    /*     return NF_ACCEPT; */
-    /* } else if(check_firewall_rules(skb)) { */
-    /*     printk("PASS FIREWALL"); */
-    /*     temp.state = trans_buf[0][temp.state]; */
-    /*     printk("FIRST CATCH STATE : %d", temp.state); */
-    /*     statehashTable_add(&temp); */
-    /*     return NF_ACCEPT; */
-    /* } else { */
-    /*     return NF_DROP; */
-    /* } */
+    retItemptr = statehashTable_exist(&temp);
+    if (tcpHeader->fin) {
+        printk("FIN PKT RECVED : NOW STATE %d", retItemptr->state);
+    }
+    if (retItemptr) {
+        stateTemp = trans_buf[retItemptr->state][temp.state];
+        // -1 means maintain old state
+        if (stateTemp != -1) {
+            if (stateTemp == CLOSED) {
+                printk("CLOSED GET ONE <--> DELETE ONE FROM TABLE");
+                statehashTable_del(retItemptr);
+            } else {
+                printk("STATE CHANGE from %d to %d", retItemptr->state, stateTemp);
+                retItemptr->state = stateTemp;
+            }
+        }
+        return NF_ACCEPT;
+    } else if(check_firewall_rules(skb)) {
+        printk("PASS FIREWALL");
+        temp.state = trans_buf[0][temp.state];
+        printk("FIRST CATCH STATE : %d", temp.state);
+        statehashTable_add(&temp);
+        return NF_ACCEPT;
+    } else {
+        return NF_DROP;
+    }
     
     printk("*******TCP********");
     printIPaddr(skb);

@@ -39,8 +39,8 @@ static int8_t in_tcp_state_tranform_buf[10][6] = {
     { -1, -1, -1, CLOSED, -1, -1 },                 // LISTEN
     { -1, -1, -1, CLOSED, -1, -1 },                 // SYN_SENT
     { -1, -1, ESTABLISHED, CLOSED, -1, -1 },        // SYN_RECV
-    { -1, -1, -1, CLOSED, -1, -1 },                 // ESTABLISHE
-    { -1, -1, FIN_WAIT2, CLOSED, -1, -1 },          // FIN_WAIT1
+    { -1, -1, -1, CLOSED, CLOSE_WAIT, CLOSE_WAIT }, // ESTABLISHE
+    { -1, -1, FIN_WAIT2, CLOSED, -1, CLOSED },      // FIN_WAIT1
     { -1, -1, -1, CLOSED, -1, -1 },                 // FIN_WAIT2
     { -1, -1, -1, CLOSED, -1, -1 },                 // CLOSE_WAIT
     { -1, -1, CLOSED, CLOSED, -1, -1 }              // LAST_ACK
@@ -52,10 +52,10 @@ static int8_t out_tcp_state_tranform_buf[10][6] = {
     { -1, SYN_RECV, -1, CLOSED, -1, -1 },                   // LISTEN
     { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_SENT
     { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_RECV
-    { -1, -1, -1, CLOSED, FIN_WAIT1, -1 },                  // ESTABLISHE
+    { -1, -1, -1, CLOSED, FIN_WAIT1, FIN_WAIT1},            // ESTABLISHE
     { -1, -1, -1, CLOSED, -1, -1 },                         // FIN_WAIT1
     { -1, -1, CLOSED, CLOSED, -1, -1 },                     // FIN_WAIT2
-    { -1, -1, -1, CLOSED, LAST_ACK, -1 },                   // CLOSE_WAIT
+    { -1, -1, -1, CLOSED, LAST_ACK, LAST_ACK },             // CLOSE_WAIT
     { -1, -1, -1, CLOSED, -1, -1 }                          // LAST_ACK
 };
 

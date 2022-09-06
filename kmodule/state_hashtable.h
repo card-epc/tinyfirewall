@@ -71,9 +71,12 @@ static void statehashTable_del(const struct StatusTableItem* citem) {
     struct hlist_node *pos, *n;
     st_hashlistNode *p;
 
+    // printk("DEL INDEX: %d", st_head_idx);
     hlist_for_each_safe(pos, n, &st_heads[st_head_idx]){
         p = hlist_entry(pos, st_hashlistNode, hlistNode);
-        if (memcmp(&p->st_item.iport, &citem->iport, corelen)) {
+        if (memcmp(&p->st_item.iport, &citem->iport, corelen) == 0) {
+            // printk("StatehashTable_del function");
+            // printCoreMsg(&p->st_item);
             hlist_del(pos);
             kfree(p);
         }
