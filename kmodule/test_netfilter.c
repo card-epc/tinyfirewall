@@ -13,6 +13,7 @@
 #include <linux/mutex.h>
 #include <linux/hashtable.h>
 #include <linux/types.h>
+#include <linux/icmp.h>
 #include "message.h"
 #include "state_hashtable.h"
 
@@ -82,20 +83,101 @@ static int32_t check_firewall_rules(const struct sk_buff *citem) {
     return 1;
 }
 
-static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10][6], int8_t isIn) {
+static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
+    bool isRequest;
+    StateTableItem* retItemptr;
+    struct iphdr* ipHeader = ip_hdr(skb);
+    struct icmphdr* icmpHeader = icmp_hdr(skb);
+    StateTableItem temp;
+    memset(&temp, 0, sizeof(temp));
+
+    isRequest = (icmpHeader->type == ICMP_REQUEST);
+    temp.proto = ICMP, temp.state = icmpHeader->type;
+    temp.core.foren_ip = ipHeader->daddr;
+    temp.core.local_ip = ipHeader->saddr;
+    // Make sure local ping foreign and foreign ping local are different
+    /*   isIn    isRequest   foreignPort  localPort
+     *    1          1            1           0  
+     *    0          0            1           0
+     *    1          0            0           1
+     *    0          1            0           1
+     */
+    temp.core.fport = !(isIn ^ isRequest);
+    temp.core.lport = (isIn ^ isRequest);
+
+    if (isIn) { 
+        SWAP_VALUE(temp.core.foren_ip, temp.core.local_ip, uint32_t);
+    }
+
+
+    retItemptr = statehashTable_exist(&temp);
+    if (retItemptr) {
+        return NF_ACCEPT;
+    } else if(check_firewall_rules(skb)) {
+        printk("PASS FIREWALL");
+        if (temp.state == ICMP_REQUEST) {
+            statehashTable_add(&temp);
+        }
+        return NF_ACCEPT;
+    } else {
+        return NF_DROP;
+    }
+}
+
+static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
+    StateTableItem* retItemptr;
+    struct iphdr* ipHeader = ip_hdr(skb);
+    struct udphdr* udpHeader = udp_hdr(skb);
+    
+    StateTableItem temp;
+    memset(&temp, 0, sizeof(temp));
+    temp.proto = UDP, temp.state = isIn;
+    temp.core.foren_ip = ipHeader->daddr;
+    temp.core.local_ip = ipHeader->saddr;
+    temp.core.fport = htons(udpHeader->dest);
+    temp.core.lport = htons(udpHeader->source);
+
+    if (isIn) { 
+        SWAP_VALUE(temp.core.foren_ip, temp.core.local_ip, uint32_t);
+        SWAP_VALUE(temp.core.fport, temp.core.lport, uint16_t);
+    }
+
+
+    retItemptr = statehashTable_exist(&temp);
+    if (retItemptr) {
+        // equality means In/Out diections is the same
+        // Can't Create a connection
+        if (isIn == retItemptr->state) {
+            ;
+        }
+        return NF_ACCEPT;
+    } else if(check_firewall_rules(skb)) {
+        printk("PASS FIREWALL");
+        statehashTable_add(&temp);
+        return NF_ACCEPT;
+    } else {
+        return NF_DROP;
+    }
+}
+
+static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10][6], bool isIn) {
     int8_t stateTemp;
     StateTableItem* retItemptr;
     struct iphdr* ipHeader = ip_hdr(skb);
     struct tcphdr* tcpHeader = tcp_hdr(skb);
     
-    StateTableItem temp = {
-        .proto = TCP,
-        .core.foren_ip = isIn ? ipHeader->saddr : ipHeader->daddr,
-        .core.local_ip = isIn ? ipHeader->daddr : ipHeader->saddr,
-        .core.fport = isIn ? htons(tcpHeader->source) : htons(tcpHeader->dest),
-        .core.lport = isIn ? htons(tcpHeader->dest) : htons(tcpHeader->source),
-        .state = get_TCP_sign(tcpHeader),
-    };
+    StateTableItem temp;
+    memset(&temp, 0, sizeof(temp));
+    temp.proto = TCP, temp.state = get_TCP_sign(tcpHeader);
+    temp.core.foren_ip = ipHeader->daddr;
+    temp.core.local_ip = ipHeader->saddr;
+    temp.core.fport = htons(tcpHeader->dest);
+    temp.core.lport = htons(tcpHeader->source);
+
+    if (isIn) { 
+        SWAP_VALUE(temp.core.foren_ip, temp.core.local_ip, uint32_t);
+        SWAP_VALUE(temp.core.fport, temp.core.lport, uint16_t);
+    }
     
 
     retItemptr = statehashTable_exist(&temp);
@@ -113,6 +195,8 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
                 printk("STATE CHANGE from %d to %d", retItemptr->state, stateTemp);
                 retItemptr->state = stateTemp;
             }
+        } else {
+            return NF_DROP;
         }
         return NF_ACCEPT;
     } else if(check_firewall_rules(skb)) {
@@ -146,12 +230,11 @@ static uint32_t test_nf_pre_routing(void *priv, struct sk_buff *skb, const struc
     /* printk("Protocol %d", ipheader->protocol); */
     switch (ipheader->protocol) {
         case ICMP:
-            break;
+            return check_icmp_status(skb, true);
         case TCP:
-            check_tcp_status(skb, in_tcp_state_tranform_buf, 1);
-            break;
+            return check_tcp_status(skb, in_tcp_state_tranform_buf, true);
         case UDP:
-            break;
+            return check_udp_status(skb, true);
         default:
             return NF_ACCEPT;
             
@@ -168,17 +251,15 @@ static uint32_t test_nf_post_routing(void *priv, struct sk_buff *skb, const stru
     const struct iphdr *ipheader = ip_hdr(skb);
     switch (ipheader->protocol) {
         case ICMP:
-            break;
+            return check_icmp_status(skb, false);
         case TCP:
-            check_tcp_status(skb, out_tcp_state_tranform_buf, 0);
-            break;
+            return check_tcp_status(skb, out_tcp_state_tranform_buf, false);
         case UDP:
-            break;
+            return check_udp_status(skb, false);
         default:
             return NF_ACCEPT;
             
     }
-    return NF_ACCEPT;
 }
 
 static struct nf_hook_ops test_nf_ops[] = {
@@ -213,18 +294,6 @@ static void __net_exit test_netfilter_exit(void) {
     nf_unregister_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 
-/* static struct pernet_operations test_netfilter_ops = { */
-/*     .init = test_netfilter_init, */
-/*     .exit = test_netfilter_exit, */
-/* }; */
-
-/* static int __init test_module_init(void) { */
-/*     return register_pernet_subsys(&test_netfilter_ops);   */
-/* } */
-/*  */
-/* static void __exit test_module_exit(void) { */
-/*     unregister_pernet_subsys(&test_netfilter_ops);   */
-/* } */
 
 module_init(test_netfilter_init);
 module_exit(test_netfilter_exit);
