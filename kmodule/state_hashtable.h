@@ -37,6 +37,7 @@ static int32_t statehashTable_add(const StateTableItem* citem) {
     
     memcpy(&listnode->st_item, citem, itemlen);
 
+    // printk("BEFORE ADD EXPIRED %u", listnode->st_item.expire);
     hash_add(st_heads, &(listnode->hlistNode), hash);    
     
     return 0;
@@ -56,7 +57,13 @@ static StateTableItem* statehashTable_exist(const StateTableItem* citem) {
         // This connection must be unique, so if status is wrong, return 0;
         if (memcmp(&p->st_item.core, &citem->core, corelen) == 0) {
             // p->st_item.state = 3;
-            return &p->st_item;
+            if (p->st_item.expire >= nowBysec()) {
+                return &p->st_item;
+            } else {
+                printk("ONE CONNCTION EXPIRED %u : %u", p->st_item.expire, nowBysec());
+                hlist_del(pos);
+                kfree(p);
+            }
         }
         printk("%d COMPARE TEST", i++);
     }

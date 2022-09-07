@@ -17,6 +17,10 @@ extern uint32_t startTimeStamp;
 #define ICMP_REPLY   0
 #define ICMP_REQUEST 8
 
+#define ICMP_DELAY 20
+#define  UDP_DELAY 30
+#define  TCP_DELAY 60
+
 
 #define SWAP_VALUE(a, b, type) \
     { type _tempc_ = (a); (a) = (b); (b) = _tempc_; }
@@ -35,6 +39,7 @@ typedef struct StateTableItem {
     uint8_t  proto;
     uint8_t  state;
     coreMsg  core;
+    uint32_t expire;
 } StateTableItem;
 
 typedef struct {
@@ -89,11 +94,12 @@ static int8_t out_tcp_state_tranform_buf[10][6] = {
 
 inline uint32_t nowBysec(void) {
     ktime_t t = ktime_to_us(ktime_get());
-    return t / USEC_PER_SEC;
+    return t / USEC_PER_SEC - startTimeStamp;
 }
 
+
 inline void printNowTime(void) {
-    printk("TIME BY NOW PASS %u s", nowBysec()-startTimeStamp);
+    printk("TIME BY NOW PASS %u s", nowBysec());
 }
 
 

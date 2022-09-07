@@ -20,6 +20,7 @@
 #define USER_MSG  24
 #define USER_PORT 50
 
+int32_t debug = 0;
 uint32_t startTimeStamp = 0;
 static struct sock* nlsock = NULL;
 
@@ -81,7 +82,12 @@ static uint8_t get_TCP_sign(const struct tcphdr* head) {
 }
 
 static int32_t check_firewall_rules(const struct sk_buff *citem) {
-    return 1;
+    if (debug < 1) {
+        debug++;
+        return 1;
+    } else {
+        return 1;
+    } 
 }
 
 static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
@@ -112,12 +118,15 @@ static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
 
 
     retItemptr = statehashTable_exist(&temp);
-    printNowTime();
     if (retItemptr) {
+        retItemptr->expire = nowBysec() + ICMP_DELAY;
+        printk("A ICMP CONNETION EXPIRED UPDATE TO %u", retItemptr->expire);
         return NF_ACCEPT;
     } else if(check_firewall_rules(skb)) {
         printk("PASS FIREWALL");
         if (temp.state == ICMP_REQUEST) {
+            temp.expire = nowBysec() + ICMP_DELAY;
+            printk("EXPIRED TIME %u", temp.expire);
             statehashTable_add(&temp);
         }
         return NF_ACCEPT;
@@ -152,9 +161,12 @@ static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
         if (isIn == retItemptr->state) {
             ;
         }
+        temp.expire = nowBysec() + UDP_DELAY;
+        printk("UDP EXPIRED UPDATE TO %u", temp.expire);
         return NF_ACCEPT;
     } else if(check_firewall_rules(skb)) {
         printk("PASS FIREWALL");
+        temp.expire = nowBysec() + UDP_DELAY;
         statehashTable_add(&temp);
         return NF_ACCEPT;
     } else {
@@ -194,7 +206,10 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
                 printk("CLOSED GET ONE <--> DELETE ONE FROM TABLE");
                 statehashTable_del(retItemptr);
             } else {
-                printk("STATE CHANGE from %d to %d", retItemptr->state, stateTemp);
+                temp.expire = nowBysec() + TCP_DELAY;
+                printk("A TCP CONNETION UPDATE TO %u", temp.expire);
+                if (retItemptr->state != stateTemp)
+                    printk("STATE CHANGE from %d to %d", retItemptr->state, stateTemp);
                 retItemptr->state = stateTemp;
             }
         } else {
@@ -205,6 +220,8 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
         printk("PASS FIREWALL");
         temp.state = trans_buf[0][temp.state];
         printk("FIRST CATCH STATE : %d", temp.state);
+        temp.expire = nowBysec() + TCP_DELAY;
+        printk("A TCP CONNETION EXPIRED %u", temp.expire);
         statehashTable_add(&temp);
         return NF_ACCEPT;
     } else {
