@@ -20,6 +20,7 @@
 #define USER_MSG  24
 #define USER_PORT 50
 
+uint32_t startTimeStamp = 0;
 static struct sock* nlsock = NULL;
 
 
@@ -111,6 +112,7 @@ static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
 
 
     retItemptr = statehashTable_exist(&temp);
+    printNowTime();
     if (retItemptr) {
         return NF_ACCEPT;
     } else if(check_firewall_rules(skb)) {
@@ -285,6 +287,8 @@ static int __net_init test_netfilter_init(void) {
     }
     printk("SOCK CREATE SUCCESS");
     statehashTable_init();
+
+    startTimeStamp = nowBysec();
     return nf_register_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 

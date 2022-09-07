@@ -13,7 +13,6 @@
 #define HTABSIZE (1 << HASHBITS)
 #define HASHMASK (HTABSIZE - 1)
 
-enum Protocol { tcp = 0, udp, icmp, others };
 
 DECLARE_HASHTABLE(st_heads, HASHBITS);
 

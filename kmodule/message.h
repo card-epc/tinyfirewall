@@ -5,6 +5,10 @@
 #include <linux/xxhash.h>
 #include <linux/ip.h>
 #include <net/ip.h>
+#include <linux/ktime.h>
+
+
+extern uint32_t startTimeStamp;
 
 #define ICMP  1
 #define TCP   6
@@ -13,8 +17,12 @@
 #define ICMP_REPLY   0
 #define ICMP_REQUEST 8
 
+
 #define SWAP_VALUE(a, b, type) \
-    { type c = (a); (a) = (b); (b) = c; }
+    { type _tempc_ = (a); (a) = (b); (b) = _tempc_; }
+
+
+
 
 typedef struct coreMsg {
     uint32_t foren_ip;
@@ -69,6 +77,27 @@ static int8_t out_tcp_state_tranform_buf[10][6] = {
     { -1, -1, -1, CLOSED, LAST_ACK, LAST_ACK },             // CLOSE_WAIT
     { -1, -1, -1, CLOSED, -1, -1 }                          // LAST_ACK
 };
+
+
+
+
+
+
+
+
+
+
+inline uint32_t nowBysec(void) {
+    ktime_t t = ktime_to_us(ktime_get());
+    return t / USEC_PER_SEC;
+}
+
+inline void printNowTime(void) {
+    printk("TIME BY NOW PASS %u s", nowBysec()-startTimeStamp);
+}
+
+
+
 
 void printIPaddr(const struct sk_buff* skb) {
     const struct iphdr* Header = ip_hdr(skb);
