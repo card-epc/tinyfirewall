@@ -19,17 +19,10 @@
 #define USER_MSG  24
 #define USER_PORT 50
 
-#define ICMP  1
-#define TCP   6
-#define UDP  17
-
 static struct sock* nlsock = NULL;
 
 
 typedef struct hlist_head st_hashlistHead;
-
-
-
 
 static int32_t sendtouser(const char* buf, uint32_t len) {
 
@@ -91,16 +84,16 @@ static int32_t check_firewall_rules(const struct sk_buff *citem) {
 
 static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10][6], int8_t isIn) {
     int8_t stateTemp;
-    StatusTableItem* retItemptr;
+    StateTableItem* retItemptr;
     struct iphdr* ipHeader = ip_hdr(skb);
     struct tcphdr* tcpHeader = tcp_hdr(skb);
     
-    StatusTableItem temp = {
+    StateTableItem temp = {
         .proto = TCP,
-        .iport.foren_ip = isIn ? ipHeader->saddr : ipHeader->daddr,
-        .iport.local_ip = isIn ? ipHeader->daddr : ipHeader->saddr,
-        .iport.fport = isIn ? htons(tcpHeader->source) : htons(tcpHeader->dest),
-        .iport.lport = isIn ? htons(tcpHeader->dest) : htons(tcpHeader->source),
+        .core.foren_ip = isIn ? ipHeader->saddr : ipHeader->daddr,
+        .core.local_ip = isIn ? ipHeader->daddr : ipHeader->saddr,
+        .core.fport = isIn ? htons(tcpHeader->source) : htons(tcpHeader->dest),
+        .core.lport = isIn ? htons(tcpHeader->dest) : htons(tcpHeader->source),
         .state = get_TCP_sign(tcpHeader),
     };
     

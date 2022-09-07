@@ -6,6 +6,10 @@
 #include <linux/ip.h>
 #include <net/ip.h>
 
+#define ICMP  1
+#define TCP   6
+#define UDP  17
+
 typedef struct coreMsg {
     uint32_t foren_ip;
     uint32_t local_ip;
@@ -13,19 +17,19 @@ typedef struct coreMsg {
     uint16_t lport;
 } coreMsg;
 
-typedef struct StatusTableItem {
+typedef struct StateTableItem {
     uint8_t  proto;
     uint8_t  state;
-    coreMsg  iport;
-} StatusTableItem;
+    coreMsg  core;
+} StateTableItem;
 
 typedef struct {
-    StatusTableItem st_item;
+    StateTableItem st_item;
     struct hlist_node hlistNode;
 } st_hashlistNode;
 
 const uint32_t corelen = sizeof(coreMsg);
-const uint32_t itemlen = sizeof(StatusTableItem);
+const uint32_t itemlen = sizeof(StateTableItem);
 const uint32_t hashseed = 0xabcd1234;
 
 enum TCP_STATUS { CLOSED = 1, LISTEN, SYN_SENT, SYN_RECV, ESTABLISHED, FIN_WAIT1, FIN_WAIT2, CLOSE_WAIT, LAST_ACK  };
@@ -35,15 +39,15 @@ enum TCP_SIGN { SYN, SYNACK, ACK, RST, FIN, FINACK, UNDEFINED };
 
 static int8_t in_tcp_state_tranform_buf[10][6] = {
     { LISTEN, SYN_SENT, ESTABLISHED, CLOSED, ESTABLISHED, FIN_WAIT2 }, // FIRST RECV IN PKT, CHOOSE A STATE
-    { -1, -1, -1, -1, -1, -1 },                     // CLOSED
-    { -1, -1, -1, CLOSED, -1, -1 },                 // LISTEN
-    { -1, -1, -1, CLOSED, -1, -1 },                 // SYN_SENT
-    { -1, -1, ESTABLISHED, CLOSED, -1, -1 },        // SYN_RECV
-    { -1, -1, -1, CLOSED, CLOSE_WAIT, CLOSE_WAIT }, // ESTABLISHE
-    { -1, -1, FIN_WAIT2, CLOSED, -1, CLOSED },      // FIN_WAIT1
-    { -1, -1, -1, CLOSED, -1, -1 },                 // FIN_WAIT2
-    { -1, -1, -1, CLOSED, -1, -1 },                 // CLOSE_WAIT
-    { -1, -1, CLOSED, CLOSED, -1, -1 }              // LAST_ACK
+    { -1, -1, -1, -1, -1, -1 },                             // CLOSED
+    { LISTEN, -1, -1, CLOSED, -1, -1 },                     // LISTEN
+    { -1, SYN_SENT, -1, CLOSED, -1, -1 },                   // SYN_SENT
+    { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_RECV
+    { -1, -1, ESTABLISHED, CLOSED, CLOSE_WAIT, CLOSE_WAIT },// ESTABLISHE
+    { -1, -1, FIN_WAIT2, CLOSED, -1, CLOSED },              // FIN_WAIT1
+    { -1, -1, -1, CLOSED, -1, CLOSED },                     // FIN_WAIT2
+    { -1, -1, -1, CLOSED, -1, -1 },                         // CLOSE_WAIT
+    { -1, -1, CLOSED, CLOSED, -1, -1 }                      // LAST_ACK
 };
 
 static int8_t out_tcp_state_tranform_buf[10][6] = {
@@ -52,7 +56,7 @@ static int8_t out_tcp_state_tranform_buf[10][6] = {
     { -1, SYN_RECV, -1, CLOSED, -1, -1 },                   // LISTEN
     { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_SENT
     { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_RECV
-    { -1, -1, -1, CLOSED, FIN_WAIT1, FIN_WAIT1},            // ESTABLISHE
+    { -1, -1, ESTABLISHED, CLOSED, FIN_WAIT1, FIN_WAIT1},   // ESTABLISHE
     { -1, -1, -1, CLOSED, -1, -1 },                         // FIN_WAIT1
     { -1, -1, CLOSED, CLOSED, -1, -1 },                     // FIN_WAIT2
     { -1, -1, -1, CLOSED, LAST_ACK, LAST_ACK },             // CLOSE_WAIT
@@ -80,15 +84,15 @@ void printTcpFlags(const struct sk_buff* skb) {
             Header->syn, Header->ack, Header->psh, Header->fin, Header->rst, Header->urg);
 }
 
-void printCoreMsg(const StatusTableItem* citem) {
-    uint32_t fipaddr = citem->iport.foren_ip;
-    uint32_t lipaddr = citem->iport.local_ip;
+void printCoreMsg(const StateTableItem* citem) {
+    uint32_t fipaddr = citem->core.foren_ip;
+    uint32_t lipaddr = citem->core.local_ip;
     printk("forei IP: %d.%d.%d.%d", *((uint8_t*)(&fipaddr) + 0), *((uint8_t*)(&fipaddr) + 1),
                           *((uint8_t*)(&fipaddr) + 2), *((uint8_t*)(&fipaddr) + 3));
     printk("local IP: %d.%d.%d.%d", *((uint8_t*)(&lipaddr) + 0), *((uint8_t*)(&lipaddr) + 1),
                           *((uint8_t*)(&lipaddr) + 2), *((uint8_t*)(&lipaddr) + 3));
-    printk("forei Port: %hu", (citem->iport.fport));
-    printk("local Port: %hu", (citem->iport.lport));
+    printk("forei Port: %hu", (citem->core.fport));
+    printk("local Port: %hu", (citem->core.lport));
     printk("proto: %u, state: %u", citem->proto, citem->state);
 }
 

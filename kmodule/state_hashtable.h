@@ -18,18 +18,18 @@ enum Protocol { tcp = 0, udp, icmp, others };
 DECLARE_HASHTABLE(st_heads, HASHBITS);
 
 
-// static int32_t stateTCPItemCmp(const struct StatusTableItem* ctableitem, const struct StatusTableItem* cquertitem) {
+// static int32_t stateTCPItemCmp(const struct StateTableItem* ctableitem, const struct StateTableItem* cquertitem) {
 //     // if ((ctableitem->src_ip == cquertitem->src_ip &&))
 // }
 
-static int32_t statehashTable_add(const StatusTableItem* citem) {
+static int32_t statehashTable_add(const StateTableItem* citem) {
     // GET HASH
     st_hashlistNode *listnode;
     uint32_t hash = 12345678;
 
     printk("Hash Table Add an Item");
 
-    hash = xxh32(&citem->iport, corelen, hashseed);
+    hash = xxh32(&citem->core, corelen, hashseed);
     listnode = (st_hashlistNode*)kmalloc(sizeof(st_hashlistNode), GFP_KERNEL);
     if (listnode == NULL) {
         printk("Hash Table Add Kmalloc Error");
@@ -44,9 +44,9 @@ static int32_t statehashTable_add(const StatusTableItem* citem) {
 }
 
 // Check Connection Status, if exists then return Status
-static StatusTableItem* statehashTable_exist(const StatusTableItem* citem) {
+static StateTableItem* statehashTable_exist(const StateTableItem* citem) {
 
-    uint32_t hash = xxh32(&citem->iport, corelen, hashseed);
+    uint32_t hash = xxh32(&citem->core, corelen, hashseed);
     uint32_t st_head_idx = hash_32(hash, HASHBITS);
     struct hlist_node *pos, *n;
     st_hashlistNode *p;
@@ -55,7 +55,7 @@ static StatusTableItem* statehashTable_exist(const StatusTableItem* citem) {
     hlist_for_each_safe(pos, n, &st_heads[st_head_idx]) {
         p = hlist_entry(pos, st_hashlistNode, hlistNode);
         // This connection must be unique, so if status is wrong, return 0;
-        if (memcmp(&p->st_item.iport, &citem->iport, corelen) == 0) {
+        if (memcmp(&p->st_item.core, &citem->core, corelen) == 0) {
             // p->st_item.state = 3;
             return &p->st_item;
         }
@@ -64,9 +64,9 @@ static StatusTableItem* statehashTable_exist(const StatusTableItem* citem) {
     return NULL;
 }
 
-static void statehashTable_del(const struct StatusTableItem* citem) {
+static void statehashTable_del(const struct StateTableItem* citem) {
 
-    uint32_t hash = xxh32(&citem->iport, corelen, hashseed);
+    uint32_t hash = xxh32(&citem->core, corelen, hashseed);
     uint32_t st_head_idx = hash_32(hash, HASHBITS);
     struct hlist_node *pos, *n;
     st_hashlistNode *p;
@@ -74,7 +74,7 @@ static void statehashTable_del(const struct StatusTableItem* citem) {
     // printk("DEL INDEX: %d", st_head_idx);
     hlist_for_each_safe(pos, n, &st_heads[st_head_idx]){
         p = hlist_entry(pos, st_hashlistNode, hlistNode);
-        if (memcmp(&p->st_item.iport, &citem->iport, corelen) == 0) {
+        if (memcmp(&p->st_item.core, &citem->core, corelen) == 0) {
             // printk("StatehashTable_del function");
             // printCoreMsg(&p->st_item);
             hlist_del(pos);
@@ -88,7 +88,7 @@ static void statehashTable_init(void) {
     // int i;
     // struct hlist_node *pos;
     // st_hashlistNode *p;
-    // StatusTableItem item = { .state = 1, .iport.foren_ip = 1234, .iport.local_ip = 5678 };
+    // StateTableItem item = { .state = 1, .core.foren_ip = 1234, .core.local_ip = 5678 };
 
     printk("hashlist is starting...\n");
     /* INIT_HLIST_HEAD(&st_heads); */
