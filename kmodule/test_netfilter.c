@@ -96,6 +96,7 @@ static int32_t check_firewall_rules(const struct sk_buff *citem) {
 static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
     bool isRequest;
     StateTableItem* retItemptr;
+    struct hlist_node* exist_pos;
     struct iphdr* ipHeader = ip_hdr(skb);
     struct icmphdr* icmpHeader = icmp_hdr(skb);
     StateTableItem temp;
@@ -120,8 +121,9 @@ static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
     }
 
 
-    retItemptr = statehashTable_exist(&temp);
-    if (retItemptr) {
+    exist_pos = statehashTable_exist(&temp);
+    if (exist_pos) {
+        retItemptr = &stateTable_entry(exist_pos)->st_item;
         retItemptr->expire = nowBysec() + ICMP_DELAY;
         printk("A ICMP CONNETION EXPIRED UPDATE TO %u", retItemptr->expire);
         return NF_ACCEPT;
@@ -140,6 +142,7 @@ static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
 
 static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
     StateTableItem* retItemptr;
+    struct hlist_node* exist_pos;
     struct iphdr* ipHeader = ip_hdr(skb);
     struct udphdr* udpHeader = udp_hdr(skb);
     
@@ -157,8 +160,9 @@ static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
     }
 
 
-    retItemptr = statehashTable_exist(&temp);
-    if (retItemptr) {
+    exist_pos = statehashTable_exist(&temp);
+    if (exist_pos) {
+        retItemptr = &stateTable_entry(exist_pos)->st_item;
         // equality means In/Out diections is the same
         // Can't Create a connection
         if (isIn == retItemptr->state) {
@@ -180,6 +184,7 @@ static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
 static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10][6], bool isIn) {
     int8_t stateTemp;
     StateTableItem* retItemptr;
+    struct hlist_node* exist_pos;
     struct iphdr* ipHeader = ip_hdr(skb);
     struct tcphdr* tcpHeader = tcp_hdr(skb);
     
@@ -197,17 +202,19 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
     }
     
 
-    retItemptr = statehashTable_exist(&temp);
-    if (tcpHeader->fin) {
-        printk("FIN PKT RECVED : NOW STATE %d", retItemptr->state);
-    }
-    if (retItemptr) {
+    exist_pos = statehashTable_exist(&temp);
+    /* if (tcpHeader->fin) { */
+    /*     printk("FIN PKT RECVED : NOW STATE %d", retItemptr->state); */
+    /* } */
+    if (exist_pos) {
+        retItemptr = &stateTable_entry(exist_pos)->st_item;
         stateTemp = trans_buf[retItemptr->state][temp.state];
         // -1 means maintain old state
         if (stateTemp != -1) {
             if (stateTemp == CLOSED) {
                 printk("CLOSED GET ONE <--> DELETE ONE FROM TABLE");
-                statehashTable_del(retItemptr);
+                statetable_node_del(exist_pos);
+                /* statehashTable_del(retItemptr); */
             } else {
                 temp.expire = nowBysec() + TCP_DELAY;
                 printk("A TCP CONNETION UPDATE TO %u", temp.expire);
