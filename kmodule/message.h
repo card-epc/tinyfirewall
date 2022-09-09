@@ -21,11 +21,8 @@ extern uint32_t startTimeStamp;
 #define  UDP_DELAY 30
 #define  TCP_DELAY 60
 
-
-#define SWAP_VALUE(a, b, type) \
-    { type _tempc_ = (a); (a) = (b); (b) = _tempc_; }
-
-
+#define SWAP_VALUE(a, b) \
+    { static_assert(__same_type(a, b), "Different Type");typeof(a) _tempc_ = (a); (a) = (b); (b) = _tempc_; }
 
 
 typedef struct coreMsg {

@@ -8,6 +8,9 @@
 #include "message.h"
 
 
+extern spinlock_t stateHashTable_lock;
+extern unsigned long   lockflags;
+
 // Hash Table Config
 #define HASHBITS 10
 #define HTABSIZE (1 << HASHBITS)
@@ -16,10 +19,6 @@
 
 DECLARE_HASHTABLE(st_heads, HASHBITS);
 
-
-// static int32_t stateTCPItemCmp(const struct StateTableItem* ctableitem, const struct StateTableItem* cquertitem) {
-//     // if ((ctableitem->src_ip == cquertitem->src_ip &&))
-// }
 
 static int32_t statehashTable_add(const StateTableItem* citem) {
     // GET HASH
@@ -38,7 +37,9 @@ static int32_t statehashTable_add(const StateTableItem* citem) {
     memcpy(&listnode->st_item, citem, itemlen);
 
     // printk("BEFORE ADD EXPIRED %u", listnode->st_item.expire);
+    // spin_lock_irqsave(&stateHashTable_lock, lockflags);
     hash_add(st_heads, &(listnode->hlistNode), hash);    
+    // spin_unlock_irqrestore(&stateHashTable_lock, lockflags);
     
     return 0;
 }
@@ -52,6 +53,7 @@ static StateTableItem* statehashTable_exist(const StateTableItem* citem) {
     st_hashlistNode *p;
     int i = 0;
 
+                // spin_lock_irqsave(&stateHashTable_lock, lockflags);
     hlist_for_each_safe(pos, n, &st_heads[st_head_idx]) {
         p = hlist_entry(pos, st_hashlistNode, hlistNode);
         // This connection must be unique, so if status is wrong, return 0;
@@ -63,10 +65,12 @@ static StateTableItem* statehashTable_exist(const StateTableItem* citem) {
                 printk("ONE CONNCTION EXPIRED %u : %u", p->st_item.expire, nowBysec());
                 hlist_del(pos);
                 kfree(p);
+                break;
             }
         }
         printk("%d COMPARE TEST", i++);
     }
+                // spin_unlock_irqrestore(&stateHashTable_lock, lockflags);
     return NULL;
 }
 
@@ -78,6 +82,7 @@ static void statehashTable_del(const struct StateTableItem* citem) {
     st_hashlistNode *p;
 
     // printk("DEL INDEX: %d", st_head_idx);
+    spin_lock(&stateHashTable_lock);
     hlist_for_each_safe(pos, n, &st_heads[st_head_idx]){
         p = hlist_entry(pos, st_hashlistNode, hlistNode);
         if (memcmp(&p->st_item.core, &citem->core, corelen) == 0) {
@@ -87,6 +92,7 @@ static void statehashTable_del(const struct StateTableItem* citem) {
             kfree(p);
         }
     }
+    spin_unlock(&stateHashTable_lock);
 }
 
 static void statehashTable_init(void) {
