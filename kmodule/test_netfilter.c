@@ -26,6 +26,8 @@ unsigned long lockflags;
 uint32_t startTimeStamp = 0;
 static struct sock* nlsock = NULL;
 
+bool default_rule = 0;
+
 
 typedef struct hlist_head st_hashlistHead;
 
@@ -142,8 +144,8 @@ static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
     temp.proto = UDP, temp.state = isIn;
     temp.core.foren_ip = ntohl(ipHeader->daddr);
     temp.core.local_ip = ntohl(ipHeader->saddr);
-    temp.core.fport = htons(udpHeader->dest);
-    temp.core.lport = htons(udpHeader->source);
+    temp.core.fport    = ntohs(udpHeader->dest);
+    temp.core.lport    = ntohs(udpHeader->source);
 
     if (isIn) { 
         SWAP_VALUE(temp.core.foren_ip, temp.core.local_ip);
@@ -184,8 +186,8 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
     temp.proto = TCP, temp.state = get_TCP_sign(tcpHeader);
     temp.core.foren_ip = ntohl(ipHeader->daddr);
     temp.core.local_ip = ntohl(ipHeader->saddr);
-    temp.core.fport = htons(tcpHeader->dest);
-    temp.core.lport = htons(tcpHeader->source);
+    temp.core.fport    = ntohs(tcpHeader->dest);
+    temp.core.lport    = ntohs(tcpHeader->source);
 
     if (isIn) { 
         SWAP_VALUE(temp.core.foren_ip, temp.core.local_ip);
@@ -316,8 +318,7 @@ static int __net_init test_netfilter_init(void) {
 
     startTimeStamp = nowBysec();
     
-    ruleList_add(&item);
-    item.action = 0;
+    item.action = 1;
     item.protocol = ICMP;
     item.src_cidr = 32;
     item.dst_cidr = 32;
@@ -330,7 +331,7 @@ static int __net_init test_netfilter_init(void) {
 
 static void __net_exit test_netfilter_exit(void) {
     sock_release(nlsock->sk_socket);
-    statehashTable_exit();
+    statehashTable_destory();
     ruleList_destory();
     nf_unregister_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }

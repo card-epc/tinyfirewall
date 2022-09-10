@@ -10,6 +10,7 @@
 
 extern spinlock_t stateHashTable_lock;
 extern unsigned long   lockflags;
+extern bool default_rule;
 
 // Hash Table Config
 #define HASHBITS 10
@@ -120,7 +121,7 @@ static bool check_firewall_rules(const StateTableItem *citem, bool isIn) {
         }
     }
 
-    return 1;
+    return default_rule;
 
 }
 
@@ -214,7 +215,7 @@ static void statehashTable_init(void) {
 
 }
 
-static void statehashTable_exit(void){
+static void statehashTable_destory(void){
     int i, a = 0;
     st_hashlistNode *p;
     struct hlist_node *pos, *n;
