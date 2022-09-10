@@ -14,7 +14,7 @@ extern unsigned long   lockflags;
 // Hash Table Config
 #define HASHBITS 10
 #define HTABSIZE (1 << HASHBITS)
-#define HASHMASK (HTABSIZE - 1)
+#define HASHMASK ((HTABSIZE) - 1)
 
 #define stateTable_entry(pos) hlist_entry(pos, st_hashlistNode, hlistNode)
 #define ruleList_entry(pos)   list_entry(pos, rulelistNode, listnode)
@@ -72,6 +72,58 @@ static void ruleList_destory(void) {
     }
 }
 
+static bool check_firewall_rules(const StateTableItem *citem, bool isIn) {
+    uint8_t  proto;
+    uint32_t srcmask, dstmask;
+
+    struct list_head *pos, *n; 
+    rulelistNode *p;
+
+    struct {
+        uint32_t src_ip;   // --> foreign 
+        uint32_t dst_ip;   // --> local
+        uint16_t src_port;
+        uint16_t dst_port;
+    } info;
+
+    memcpy(&info, &citem->core, sizeof(info));
+    proto = citem->proto;
+    if (!isIn) {
+        SWAP_VALUE(info.src_ip, info.dst_ip);
+        SWAP_VALUE(info.dst_port, info.src_port);
+    }
+
+    if (citem->proto == ICMP) {
+        printk("SRC_IP %u\nDST_IP %u\n", info.src_ip, info.dst_ip);
+    }
+
+    list_for_each_safe(pos, n, &rulelist) {
+        p = ruleList_entry(pos);
+        
+        if (p->ruleitem.protocol == 0 || p->ruleitem.protocol == proto) {
+            printk("RULE TEST PROTOCOL PASS");
+            srcmask = GETMASK(p->ruleitem.src_cidr);
+            dstmask = GETMASK(p->ruleitem.dst_cidr);
+            if ((info.src_ip & srcmask) == p->ruleitem.src_ip && 
+                (info.dst_ip & dstmask) == p->ruleitem.dst_ip) {
+                printk("RULE TEST IPADDR TEST PASS");
+                if (proto == ICMP) {
+                    return p->ruleitem.action;
+                } else {
+                    if ((!p->ruleitem.src_port || p->ruleitem.src_port == info.src_port) &&
+                        (!p->ruleitem.dst_port || p->ruleitem.dst_port == info.dst_port)) {
+                        printk("RULE TEST PORT PASS");
+                        return p->ruleitem.action;
+                    }
+                }
+            }
+        }
+    }
+
+    return 1;
+
+}
+
 static bool statehashTable_add(const StateTableItem* citem) {
     // GET HASH
     st_hashlistNode *listnode;
@@ -127,7 +179,7 @@ static struct hlist_node* statehashTable_exist(const StateTableItem* citem) {
     return NULL;
 }
 
-static void statehashTable_del(const struct StateTableItem* citem) {
+static void statehashTable_del(const StateTableItem* citem) {
 
     uint32_t hash = xxh32(&citem->core, corelen, hashseed);
     uint32_t st_head_idx = hash_32(hash, HASHBITS);

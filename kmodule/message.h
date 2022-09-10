@@ -21,25 +21,27 @@ extern uint32_t startTimeStamp;
 #define  UDP_DELAY 30
 #define  TCP_DELAY 60
 
+
+#define GETMASK(cidr) (((cidr) >= 32) ? (0xffffffff) : ( (1<<(cidr)) - 1))
 #define SWAP_VALUE(a, b) \
     { static_assert(__same_type(a, b), "Different Type");typeof(a) _tempc_ = (a); (a) = (b); (b) = _tempc_; }
 
 
-typedef struct coreMsg {
+typedef struct {
     uint32_t foren_ip;
     uint32_t local_ip;
     uint16_t fport;
     uint16_t lport;
 } coreMsg;
 
-typedef struct StateTableItem {
+typedef struct {
     uint8_t  proto;
     uint8_t  state;
     coreMsg  core;
     uint32_t expire;
 } StateTableItem;
 
-typedef struct RuleTableItem {
+typedef struct {
     uint32_t src_ip;
     uint32_t dst_ip;
     uint16_t src_port;

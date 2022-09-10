@@ -23,7 +23,6 @@
 spinlock_t stateHashTable_lock;
 unsigned long lockflags;
 
-int32_t debug = 0;
 uint32_t startTimeStamp = 0;
 static struct sock* nlsock = NULL;
 
@@ -84,14 +83,6 @@ static uint8_t get_TCP_sign(const struct tcphdr* head) {
     return UNDEFINED;
 }
 
-static int32_t check_firewall_rules(const struct sk_buff *citem) {
-    if (debug < 1) {
-        debug++;
-        return 1;
-    } else {
-        return 1;
-    } 
-}
 
 static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
     bool isRequest;
@@ -104,8 +95,8 @@ static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
 
     isRequest = (icmpHeader->type == ICMP_REQUEST);
     temp.proto = ICMP, temp.state = icmpHeader->type;
-    temp.core.foren_ip = ipHeader->daddr;
-    temp.core.local_ip = ipHeader->saddr;
+    temp.core.foren_ip = ntohl(ipHeader->daddr);
+    temp.core.local_ip = ntohl(ipHeader->saddr);
     // Make sure local ping foreign and foreign ping local are different
     /*   isIn    isRequest   foreignPort  localPort
      *    1          1            1           0  
@@ -127,7 +118,7 @@ static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
         retItemptr->expire = nowBysec() + ICMP_DELAY;
         printk("A ICMP CONNETION EXPIRED UPDATE TO %u", retItemptr->expire);
         return NF_ACCEPT;
-    } else if(check_firewall_rules(skb)) {
+    } else if(check_firewall_rules(&temp, isIn)) {
         printk("PASS FIREWALL");
         if (temp.state == ICMP_REQUEST) {
             temp.expire = nowBysec() + ICMP_DELAY;
@@ -149,8 +140,8 @@ static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
     StateTableItem temp;
     memset(&temp, 0, sizeof(temp));
     temp.proto = UDP, temp.state = isIn;
-    temp.core.foren_ip = ipHeader->daddr;
-    temp.core.local_ip = ipHeader->saddr;
+    temp.core.foren_ip = ntohl(ipHeader->daddr);
+    temp.core.local_ip = ntohl(ipHeader->saddr);
     temp.core.fport = htons(udpHeader->dest);
     temp.core.lport = htons(udpHeader->source);
 
@@ -171,7 +162,7 @@ static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
         temp.expire = nowBysec() + UDP_DELAY;
         printk("UDP EXPIRED UPDATE TO %u", temp.expire);
         return NF_ACCEPT;
-    } else if(check_firewall_rules(skb)) {
+    } else if(check_firewall_rules(&temp, isIn)) {
         printk("PASS FIREWALL");
         temp.expire = nowBysec() + UDP_DELAY;
         statehashTable_add(&temp);
@@ -191,8 +182,8 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
     StateTableItem temp;
     memset(&temp, 0, sizeof(temp));
     temp.proto = TCP, temp.state = get_TCP_sign(tcpHeader);
-    temp.core.foren_ip = ipHeader->daddr;
-    temp.core.local_ip = ipHeader->saddr;
+    temp.core.foren_ip = ntohl(ipHeader->daddr);
+    temp.core.local_ip = ntohl(ipHeader->saddr);
     temp.core.fport = htons(tcpHeader->dest);
     temp.core.lport = htons(tcpHeader->source);
 
@@ -201,7 +192,6 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
         SWAP_VALUE(temp.core.fport, temp.core.lport);
     }
     
-
     exist_pos = statehashTable_exist(&temp);
     /* if (tcpHeader->fin) { */
     /*     printk("FIN PKT RECVED : NOW STATE %d", retItemptr->state); */
@@ -226,7 +216,7 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
             return NF_DROP;
         }
         return NF_ACCEPT;
-    } else if(check_firewall_rules(skb)) {
+    } else if(check_firewall_rules(&temp, isIn)) {
         printk("PASS FIREWALL");
         temp.state = trans_buf[0][temp.state];
         printk("FIRST CATCH STATE : %d", temp.state);
@@ -311,7 +301,7 @@ static int __net_init test_netfilter_init(void) {
         .protocol = 0, .action = 1,
         .dst_port = 0, .src_port = 0,
         .dst_ip = 0, .src_ip = 0,
-        .dst_cidr = 0, .dst_cidr = 0
+        .dst_cidr = 0, .dst_cidr = 0,
     };
 
     nlsock = netlink_kernel_create(&init_net, USER_MSG, &cfg);
@@ -327,6 +317,12 @@ static int __net_init test_netfilter_init(void) {
     startTimeStamp = nowBysec();
     
     ruleList_add(&item);
+    item.action = 0;
+    item.protocol = ICMP;
+    item.src_cidr = 32;
+    item.dst_cidr = 32;
+    item.src_ip = 3232274433;
+    item.dst_ip = 3232274579;
     ruleList_add(&item);
     
     return nf_register_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
