@@ -307,6 +307,13 @@ static struct nf_hook_ops test_nf_ops[] = {
 };
 
 static int __net_init test_netfilter_init(void) {
+    RuleTableItem item = {
+        .protocol = 0, .action = 1,
+        .dst_port = 0, .src_port = 0,
+        .dst_ip = 0, .src_ip = 0,
+        .dst_cidr = 0, .dst_cidr = 0
+    };
+
     nlsock = netlink_kernel_create(&init_net, USER_MSG, &cfg);
     if (NULL == nlsock) {
         printk("SOCK CREATE ERROR");
@@ -318,12 +325,17 @@ static int __net_init test_netfilter_init(void) {
     spin_lock_init(&stateHashTable_lock);
 
     startTimeStamp = nowBysec();
+    
+    ruleList_add(&item);
+    ruleList_add(&item);
+    
     return nf_register_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 
 static void __net_exit test_netfilter_exit(void) {
     sock_release(nlsock->sk_socket);
     statehashTable_exit();
+    ruleList_destory();
     nf_unregister_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 

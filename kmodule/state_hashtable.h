@@ -17,14 +17,62 @@ extern unsigned long   lockflags;
 #define HASHMASK (HTABSIZE - 1)
 
 #define stateTable_entry(pos) hlist_entry(pos, st_hashlistNode, hlistNode)
+#define ruleList_entry(pos)   list_entry(pos, rulelistNode, listnode)
 
 #define statetable_node_del(pos) \
 { static_assert(__same_type((pos), struct hlist_node*));hlist_del(pos);kfree(stateTable_entry(pos)); }
 
+// Declare data structure
 DECLARE_HASHTABLE(st_heads, HASHBITS);
+LIST_HEAD(rulelist);
 
+static bool ruleList_add(const RuleTableItem* critem) {
+    rulelistNode* rulenode;
+    
+    rulenode = (rulelistNode*)kmalloc(sizeof(rulelistNode), GFP_KERNEL);
+    if (rulenode == NULL) {
+        printk("Rule List Add Kmalloc Error");
+        return 0;
+    }
+    
+    memcpy(&rulenode->ruleitem, critem, sizeof(RuleTableItem));
+    list_add(&rulenode->listnode, &rulelist);
 
-static int32_t statehashTable_add(const StateTableItem* citem) {
+    return 1;
+}
+
+static void ruleList_del(uint32_t idnum) {
+    uint32_t idx = idnum;
+    struct list_head *pos, *n;
+    rulelistNode* p;
+
+    list_for_each_safe(pos, n, &rulelist) {
+        if (idx == 0) {
+            p = ruleList_entry(pos);
+            list_del(pos);
+            kfree(p);
+            printk("Rule List Node %u was Del", idnum);
+            break;
+        } else {
+            --idx;
+        }
+    }
+}
+
+static void ruleList_destory(void) {
+    struct list_head *pos, *n; 
+    rulelistNode *p;
+
+    list_for_each_safe(pos, n, &rulelist) {
+        p = ruleList_entry(pos);
+
+        list_del(pos);
+        printk("A RuleNode Delete IN DESTORY");
+        kfree(p);
+    }
+}
+
+static bool statehashTable_add(const StateTableItem* citem) {
     // GET HASH
     st_hashlistNode *listnode;
     uint32_t hash = 12345678;
@@ -35,7 +83,7 @@ static int32_t statehashTable_add(const StateTableItem* citem) {
     listnode = (st_hashlistNode*)kmalloc(sizeof(st_hashlistNode), GFP_KERNEL);
     if (listnode == NULL) {
         printk("Hash Table Add Kmalloc Error");
-        return -1;
+        return 0;
     }
     
     memcpy(&listnode->st_item, citem, itemlen);
@@ -45,7 +93,7 @@ static int32_t statehashTable_add(const StateTableItem* citem) {
     hash_add(st_heads, &(listnode->hlistNode), hash);    
     // spin_unlock_irqrestore(&stateHashTable_lock, lockflags);
     
-    return 0;
+    return 1;
 }
 
 // Check Connection Status, if exists then return Status
@@ -111,7 +159,6 @@ static void statehashTable_init(void) {
     printk("hashlist is starting...\n");
     /* INIT_HLIST_HEAD(&st_heads); */
     hash_init(st_heads);
-
 
 }
 

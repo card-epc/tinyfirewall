@@ -39,6 +39,22 @@ typedef struct StateTableItem {
     uint32_t expire;
 } StateTableItem;
 
+typedef struct RuleTableItem {
+    uint32_t src_ip;
+    uint32_t dst_ip;
+    uint16_t src_port;
+    uint16_t dst_port;
+    uint8_t  src_cidr;
+    uint8_t  dst_cidr;
+    uint8_t  protocol;
+    uint8_t  action;
+} RuleTableItem;
+
+typedef struct {
+    RuleTableItem ruleitem;
+    struct list_head listnode;
+} rulelistNode;
+
 typedef struct {
     StateTableItem st_item;
     struct hlist_node hlistNode;
