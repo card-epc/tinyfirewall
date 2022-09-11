@@ -31,7 +31,7 @@ bool default_rule = 0;
 
 typedef struct hlist_head st_hashlistHead;
 
-static int32_t sendtouser(const char* buf, uint32_t len) {
+static int32_t sendtouser(const char* buf, uint32_t len, uint32_t dst_pid) {
 
     struct sk_buff* nl_skb;
     struct nlmsghdr* nl_hdr;
@@ -50,20 +50,27 @@ static int32_t sendtouser(const char* buf, uint32_t len) {
     }
 
     memcpy(nlmsg_data(nl_hdr), buf, len);
-    return netlink_unicast(nlsock, nl_skb, USER_PORT, MSG_DONTWAIT);
+    
+    netlink_unicast(nlsock, nl_skb, dst_pid, MSG_DONTWAIT);
+    
+    nlmsg_free(nl_skb);
+    
+    return 0;
 }
 
 static void recvfromuser(struct sk_buff* skb) {
     struct nlmsghdr* nl_hdr = NULL;
     char* data = NULL;
     const char* str = "This is KERNEL";
+    uint32_t payload_len = skb->len - NLMSG_HDRLEN;
     printk("Recv Pkg Len : %u\n", skb->len);
     if (skb->len >= nlmsg_total_size(0)) {
         nl_hdr = nlmsg_hdr(skb);
         data = nlmsg_data(nl_hdr);
         if (data != NULL) {
             printk("kernel Recv Data : %s", data);
-            sendtouser(str, strlen(str));
+            printk("PAYLOAD %d", payload_len);
+            sendtouser(str, strlen(str), nl_hdr->nlmsg_pid);
         }
     }
 }

@@ -12,6 +12,8 @@ extern spinlock_t stateHashTable_lock;
 extern unsigned long   lockflags;
 extern bool default_rule;
 
+int llll = 0;
+
 // Hash Table Config
 #define HASHBITS 10
 #define HTABSIZE (1 << HASHBITS)

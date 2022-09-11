@@ -1,12 +1,13 @@
 #ifndef __MESSAGE_H
 #define __MESSAGE_H
 
+
 #include <linux/printk.h>
 #include <linux/xxhash.h>
 #include <linux/ip.h>
 #include <net/ip.h>
 #include <linux/ktime.h>
-
+#include "structures.h"
 
 extern uint32_t startTimeStamp;
 
@@ -26,31 +27,6 @@ extern uint32_t startTimeStamp;
 #define SWAP_VALUE(a, b) \
     { static_assert(__same_type(a, b), "Different Type");typeof(a) _tempc_ = (a); (a) = (b); (b) = _tempc_; }
 
-
-typedef struct {
-    uint32_t foren_ip;
-    uint32_t local_ip;
-    uint16_t fport;
-    uint16_t lport;
-} coreMsg;
-
-typedef struct {
-    uint8_t  proto;
-    uint8_t  state;
-    coreMsg  core;
-    uint32_t expire;
-} StateTableItem;
-
-typedef struct {
-    uint32_t src_ip;
-    uint32_t dst_ip;
-    uint16_t src_port;
-    uint16_t dst_port;
-    uint8_t  src_cidr;
-    uint8_t  dst_cidr;
-    uint8_t  protocol;
-    uint8_t  action;
-} RuleTableItem;
 
 typedef struct {
     RuleTableItem ruleitem;

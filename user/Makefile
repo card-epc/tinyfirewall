@@ -1,4 +1,4 @@
 all:
-	@gcc usertest.c
+	@g++ *.cpp
 clean:
 	rm a.out
