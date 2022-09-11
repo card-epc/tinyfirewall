@@ -27,9 +27,9 @@ int main(int argc, char **argv)
         .action = 1,
     };
     NatTableItem tmp = {
-        .internal_ip = 11111111,
-        .external_ip = 22222222,
-        .intelnal_port = 3333,
+        .internal_ip = 3232274579,
+        .external_ip = 3232274579,
+        .intelnal_port = 80,
         .external_port = 4444
     };
     memcpy(n_rule.data, &temp, ruleItemlen);

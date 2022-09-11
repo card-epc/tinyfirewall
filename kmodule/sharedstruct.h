@@ -38,7 +38,7 @@ typedef struct {
 typedef struct {
     uint32_t internal_ip;
     uint32_t external_ip;
-    uint16_t intelnal_port;
+    uint16_t internal_port;
     uint16_t external_port;
 } NatTableItem;
 

@@ -76,6 +76,7 @@ static void natList_del(uint32_t idnum) {
     struct list_head *pos, *n;
     natlistNode* p;
 
+    if (idx > tot_nats) return;
     list_for_each_safe(pos, n, &natlist) {
         if (idx == 0) {
             p = natList_entry(pos);
@@ -123,6 +124,7 @@ static void ruleList_del(uint32_t idnum) {
     struct list_head *pos, *n;
     rulelistNode* p;
 
+    if (idx > tot_rules) return;
     list_for_each_safe(pos, n, &rulelist) {
         if (idx == 0) {
             p = ruleList_entry(pos);

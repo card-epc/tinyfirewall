@@ -80,8 +80,53 @@ static uint8_t get_TCP_sign(const struct tcphdr* head) {
     return UNDEFINED;
 }
 
+static bool check_nat_tranform_in(const struct sk_buff *skb) {
+    bool ifchange = false;
+    struct iphdr* ipHeader = ip_hdr(skb);
+    uint32_t *ip   = (&ipHeader->daddr);
+    uint16_t *port = (&(udp_hdr(skb)->dest));
+    struct list_head *pos, *n; 
+    natlistNode *p;
 
-static uint32_t check_icmp_status(const struct sk_buff* skb, bool isIn) {
+    list_for_each_safe(pos, n, &natlist) {
+        p = natList_entry(pos);
+        if (p->natitem.external_ip == *ip && p->natitem.external_port == *port) {
+            *ip = p->natitem.internal_ip, *port = p->natitem.internal_port, ifchange = true;
+        }
+    }
+
+    if (!ifchange) {
+        return 0;
+    } else {
+        //Calculate Checks
+        return 1;
+    }
+}
+
+static bool check_nat_tranform_out(const struct sk_buff *skb) {
+    bool ifchange = false;
+    struct iphdr* ipHeader = ip_hdr(skb);
+    uint32_t *ip   = (&ipHeader->saddr);
+    uint16_t *port = (&(udp_hdr(skb)->source));
+    struct list_head *pos, *n; 
+    natlistNode *p;
+
+    list_for_each_safe(pos, n, &natlist) {
+        p = natList_entry(pos);
+        if (p->natitem.internal_ip == *ip && p->natitem.internal_port == *port) {
+            *ip = p->natitem.external_ip, *port = p->natitem.external_port, ifchange = true;
+        }
+    }
+
+    if (!ifchange) {
+        return 0;
+    } else {
+        //Calculate Check s
+        return 1;
+    }
+}
+
+static uint32_t check_icmp_status(const struct sk_buff *skb, bool isIn) {
     bool isRequest;
     StateTableItem* retItemptr;
     struct hlist_node* exist_pos;
@@ -248,9 +293,17 @@ static uint32_t test_nf_pre_routing(void *priv, struct sk_buff *skb, const struc
         case ICMP:
             return check_icmp_status(skb, true);
         case TCP:
-            return check_tcp_status(skb, in_tcp_state_tranform_buf, true);
+            if (check_nat_tranform_in(skb)) {
+                return NF_REPEAT;
+            } else {
+                return check_tcp_status(skb, in_tcp_state_tranform_buf, true);
+            }
         case UDP:
-            return check_udp_status(skb, true);
+            if (check_nat_tranform_in(skb)) {
+                return NF_REPEAT;
+            } else {
+                return check_udp_status(skb, true);
+            }
         default:
             return NF_ACCEPT;
             
@@ -269,9 +322,17 @@ static uint32_t test_nf_post_routing(void *priv, struct sk_buff *skb, const stru
         case ICMP:
             return check_icmp_status(skb, false);
         case TCP:
-            return check_tcp_status(skb, out_tcp_state_tranform_buf, false);
+            if (check_nat_tranform_out(skb)) {
+                return NF_REPEAT;
+            } else {
+                return check_tcp_status(skb, in_tcp_state_tranform_buf, false);
+            }
         case UDP:
-            return check_udp_status(skb, false);
+            if (check_nat_tranform_out(skb)) {
+                return NF_REPEAT;
+            } else {
+                return check_udp_status(skb, false);
+            }
         default:
             return NF_ACCEPT;
             
