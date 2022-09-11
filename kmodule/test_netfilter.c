@@ -15,69 +15,56 @@
 #include <linux/types.h>
 #include <linux/icmp.h>
 #include "message.h"
-#include "state_hashtable.h"
 
-#define USER_MSG  24
-#define USER_PORT 50
+// Define TCP_STATUS (some States are combined or deleted)
+enum TCP_STATUS { CLOSED = 1, LISTEN, SYN_SENT, SYN_RECV, ESTABLISHED, FIN_WAIT1, FIN_WAIT2, CLOSE_WAIT, LAST_ACK  };
+// Define TCP DATAPACKET SIGN
+enum TCP_SIGN { SYN, SYNACK, ACK, RST, FIN, FINACK, UNDEFINED };
+// Define UDP STATE
+enum UDP_STATE { PREBUILD, BUILD };
+
+static int8_t in_tcp_state_tranform_buf[10][6] = {
+    { LISTEN, SYN_SENT, ESTABLISHED, CLOSED, ESTABLISHED, FIN_WAIT2 }, // FIRST RECV IN PKT, CHOOSE A STATE
+    { -1, -1, -1, -1, -1, -1 },                             // CLOSED
+    { LISTEN, -1, -1, CLOSED, -1, -1 },                     // LISTEN
+    { -1, SYN_SENT, -1, CLOSED, -1, -1 },                   // SYN_SENT
+    { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_RECV
+    { -1, -1, ESTABLISHED, CLOSED, CLOSE_WAIT, CLOSE_WAIT },// ESTABLISHE
+    { -1, -1, FIN_WAIT2, CLOSED, -1, CLOSED },              // FIN_WAIT1
+    { -1, -1, -1, CLOSED, -1, CLOSED },                     // FIN_WAIT2
+    { -1, -1, -1, CLOSED, -1, -1 },                         // CLOSE_WAIT
+    { -1, -1, CLOSED, CLOSED, -1, -1 }                      // LAST_ACK
+};
+
+static int8_t out_tcp_state_tranform_buf[10][6] = {
+    { SYN_SENT, SYN_RECV, ESTABLISHED, CLOSED, FIN_WAIT1, LAST_ACK }, // FIRST SEND OUT PKT, CHOOSE A STATE
+    { -1, SYN_SENT, -1, -1, -1, -1 },                       // CLOSED
+    { -1, SYN_RECV, -1, CLOSED, -1, -1 },                   // LISTEN
+    { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_SENT
+    { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_RECV
+    { -1, -1, ESTABLISHED, CLOSED, FIN_WAIT1, FIN_WAIT1},   // ESTABLISHE
+    { -1, -1, -1, CLOSED, -1, -1 },                         // FIN_WAIT1
+    { -1, -1, CLOSED, CLOSED, -1, -1 },                     // FIN_WAIT2
+    { -1, -1, -1, CLOSED, LAST_ACK, LAST_ACK },             // CLOSE_WAIT
+    { -1, -1, -1, CLOSED, -1, -1 }                          // LAST_ACK
+};
 
 spinlock_t stateHashTable_lock;
 unsigned long lockflags;
 
 uint32_t startTimeStamp = 0;
-static struct sock* nlsock = NULL;
 
-bool default_rule = 0;
-
+struct sock* nlsock = NULL;
+bool default_rule = true;
+uint32_t tot_rules = 0;
+uint32_t tot_nats = 0;
 
 typedef struct hlist_head st_hashlistHead;
-
-static int32_t sendtouser(const char* buf, uint32_t len, uint32_t dst_pid) {
-
-    struct sk_buff* nl_skb;
-    struct nlmsghdr* nl_hdr;
-
-    nl_skb = nlmsg_new(len, GFP_ATOMIC);
-    if (NULL == nl_skb) {
-        printk("nlmsg_new ERROR");
-        return -1;
-    }
-
-    nl_hdr = nlmsg_put(nl_skb, 0, 0, USER_MSG, len, 0);
-    if (NULL == nl_hdr) {
-        printk("nlmsg_put ERROR");
-        nlmsg_free(nl_skb);
-        return -1;
-    }
-
-    memcpy(nlmsg_data(nl_hdr), buf, len);
-    
-    netlink_unicast(nlsock, nl_skb, dst_pid, MSG_DONTWAIT);
-    
-    nlmsg_free(nl_skb);
-    
-    return 0;
-}
-
-static void recvfromuser(struct sk_buff* skb) {
-    struct nlmsghdr* nl_hdr = NULL;
-    char* data = NULL;
-    const char* str = "This is KERNEL";
-    uint32_t payload_len = skb->len - NLMSG_HDRLEN;
-    printk("Recv Pkg Len : %u\n", skb->len);
-    if (skb->len >= nlmsg_total_size(0)) {
-        nl_hdr = nlmsg_hdr(skb);
-        data = nlmsg_data(nl_hdr);
-        if (data != NULL) {
-            printk("kernel Recv Data : %s", data);
-            printk("PAYLOAD %d", payload_len);
-            sendtouser(str, strlen(str), nl_hdr->nlmsg_pid);
-        }
-    }
-}
 
 struct netlink_kernel_cfg cfg = {
     .input = recvfromuser,
 };
+
 
 static uint8_t get_TCP_sign(const struct tcphdr* head) {
     if (head->rst) {

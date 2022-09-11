@@ -7,94 +7,112 @@
 #include <linux/ip.h>
 #include <net/ip.h>
 #include <linux/ktime.h>
-#include "structures.h"
+#include "tablelist.h"
+#include "sharedstruct.h"
 
-extern uint32_t startTimeStamp;
+extern struct sock* nlsock; 
 
-#define ICMP  1
-#define TCP   6
-#define UDP  17
+static int32_t sendtouser(const uint8_t* buf, uint32_t len) {
 
-#define ICMP_REPLY   0
-#define ICMP_REQUEST 8
+    struct sk_buff* nl_skb;
+    struct nlmsghdr* nl_hdr;
 
-#define ICMP_DELAY 20
-#define  UDP_DELAY 30
-#define  TCP_DELAY 60
+    nl_skb = nlmsg_new(len, GFP_ATOMIC);
+    if (NULL == nl_skb) {
+        printk("nlmsg_new ERROR");
+        return -1;
+    }
 
+    nl_hdr = nlmsg_put(nl_skb, 0, 0, USER_MSG, len, 0);
+    if (NULL == nl_hdr) {
+        printk("nlmsg_put ERROR");
+        nlmsg_free(nl_skb);
+        return -1;
+    }
 
-#define GETMASK(cidr) (((cidr) >= 32) ? (0xffffffff) : ( (1<<(cidr)) - 1))
-#define SWAP_VALUE(a, b) \
-    { static_assert(__same_type(a, b), "Different Type");typeof(a) _tempc_ = (a); (a) = (b); (b) = _tempc_; }
-
-
-typedef struct {
-    RuleTableItem ruleitem;
-    struct list_head listnode;
-} rulelistNode;
-
-typedef struct {
-    StateTableItem st_item;
-    struct hlist_node hlistNode;
-} st_hashlistNode;
-
-const uint32_t corelen = sizeof(coreMsg);
-const uint32_t itemlen = sizeof(StateTableItem);
-const uint32_t hashseed = 0xabcd1234;
-
-enum TCP_STATUS { CLOSED = 1, LISTEN, SYN_SENT, SYN_RECV, ESTABLISHED, FIN_WAIT1, FIN_WAIT2, CLOSE_WAIT, LAST_ACK  };
-enum TCP_SIGN { SYN, SYNACK, ACK, RST, FIN, FINACK, UNDEFINED };
-enum UDP_STATE { PREBUILD, BUILD };
-
-// static int8_t first_in_tcp_state[6] = { LISTEN, SYN_SENT, ESTABLISHED, CLOSED, ESTABLISHED, FIN_WAIT2 };
-
-static int8_t in_tcp_state_tranform_buf[10][6] = {
-    { LISTEN, SYN_SENT, ESTABLISHED, CLOSED, ESTABLISHED, FIN_WAIT2 }, // FIRST RECV IN PKT, CHOOSE A STATE
-    { -1, -1, -1, -1, -1, -1 },                             // CLOSED
-    { LISTEN, -1, -1, CLOSED, -1, -1 },                     // LISTEN
-    { -1, SYN_SENT, -1, CLOSED, -1, -1 },                   // SYN_SENT
-    { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_RECV
-    { -1, -1, ESTABLISHED, CLOSED, CLOSE_WAIT, CLOSE_WAIT },// ESTABLISHE
-    { -1, -1, FIN_WAIT2, CLOSED, -1, CLOSED },              // FIN_WAIT1
-    { -1, -1, -1, CLOSED, -1, CLOSED },                     // FIN_WAIT2
-    { -1, -1, -1, CLOSED, -1, -1 },                         // CLOSE_WAIT
-    { -1, -1, CLOSED, CLOSED, -1, -1 }                      // LAST_ACK
-};
-
-static int8_t out_tcp_state_tranform_buf[10][6] = {
-    { SYN_SENT, SYN_RECV, ESTABLISHED, CLOSED, FIN_WAIT1, LAST_ACK }, // FIRST SEND OUT PKT, CHOOSE A STATE
-    { -1, SYN_SENT, -1, -1, -1, -1 },                       // CLOSED
-    { -1, SYN_RECV, -1, CLOSED, -1, -1 },                   // LISTEN
-    { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_SENT
-    { -1, -1, ESTABLISHED, CLOSED, -1, -1 },                // SYN_RECV
-    { -1, -1, ESTABLISHED, CLOSED, FIN_WAIT1, FIN_WAIT1},   // ESTABLISHE
-    { -1, -1, -1, CLOSED, -1, -1 },                         // FIN_WAIT1
-    { -1, -1, CLOSED, CLOSED, -1, -1 },                     // FIN_WAIT2
-    { -1, -1, -1, CLOSED, LAST_ACK, LAST_ACK },             // CLOSE_WAIT
-    { -1, -1, -1, CLOSED, -1, -1 }                          // LAST_ACK
-};
-
-
-
-
-
-
-
-
-
-
-inline uint32_t nowBysec(void) {
-    ktime_t t = ktime_to_us(ktime_get());
-    return t / USEC_PER_SEC - startTimeStamp;
+    memcpy(nlmsg_data(nl_hdr), buf, len);
+    
+    return netlink_unicast(nlsock, nl_skb, STATIC_PORT, MSG_DONTWAIT);
 }
+
+static void sendRulesToUser(void) {
+    RuleTableItem tot_items[tot_rules];
+    uint32_t idx = 0;
+    struct list_head *pos, *n;
+    rulelistNode* p;
+
+    list_for_each_safe(pos, n, &rulelist) {
+        p = ruleList_entry(pos);
+        memcpy(tot_items + idx++, &p->ruleitem, ruleItemlen);
+    }
+
+    sendtouser((void*)tot_items, tot_rules * ruleItemlen);
+}
+
+static void recvfromuser(struct sk_buff* skb) {
+    struct nlmsghdr *nl_hdr = NULL;
+    uint8_t *data = NULL;
+    uint8_t type;
+    RuleTableItem ritem;
+    // const char *str = "This is KERNEL";
+    uint32_t payload_len = skb->len - NLMSG_HDRLEN;
+    printk("Recv Pkg Len : %u\n", skb->len);
+    if (skb->len >= nlmsg_total_size(0)) {
+        nl_hdr = nlmsg_hdr(skb);
+        data = nlmsg_data(nl_hdr);
+        type = *data;
+        printk("type %u", type);
+        printk("Length %u", payload_len);
+        switch (type) {
+            case RULE_ADD:
+                printk("ADD RULE");
+                memcpy(&ritem, data + 1, ruleItemlen);
+                ruleList_add(&ritem);
+                break;
+            case RULE_SHOW:
+                printk("RULE_SHOW");
+                sendRulesToUser();
+                break;
+            case RULE_DEL:
+                printk("RULE DEL");
+                break;
+            case NAT_ADD:
+                printk("NAT ADD");
+                break;
+            case NAT_SHOW:
+                printk("NAT_SHOW");
+                break;
+            case NAT_DEL:
+                printk("NAT_DEL");
+                break;
+            case CONNETION_SHOW:
+                printk("CONNETION_SHOW");
+                break;
+            case LOG:
+                printk("LOG");
+                break;
+            default:
+                printk("DEFAULT");
+                printk("kernel Recv Data : %s", (char*)(data+1));
+                break;
+                
+        }
+        // if (data != NULL) {
+        //     printk("PAYLOAD %d", payload_len);
+        //     sendtouser(str, strlen(str), nl_hdr->nlmsg_pid);
+        // }
+    }
+}
+
+
+
+
+
 
 
 inline void printNowTime(void) {
     printk("TIME BY NOW PASS %u s", nowBysec());
 }
-
-
-
 
 void printIPaddr(const struct sk_buff* skb) {
     const struct iphdr* Header = ip_hdr(skb);

@@ -5,14 +5,13 @@
 #include <linux/hash.h>
 #include <linux/xxhash.h>
 #include <linux/slab.h>
-#include "message.h"
-
+#include "sharedstruct.h"
 
 extern spinlock_t stateHashTable_lock;
 extern unsigned long   lockflags;
+extern uint32_t startTimeStamp;
 extern bool default_rule;
-
-int llll = 0;
+extern uint32_t tot_rules;
 
 // Hash Table Config
 #define HASHBITS 10
@@ -25,9 +24,27 @@ int llll = 0;
 #define statetable_node_del(pos) \
 { static_assert(__same_type((pos), struct hlist_node*));hlist_del(pos);kfree(stateTable_entry(pos)); }
 
+typedef struct {
+    RuleTableItem ruleitem;
+    struct list_head listnode;
+} rulelistNode;
+
+typedef struct {
+    StateTableItem st_item;
+    struct hlist_node hlistNode;
+} st_hashlistNode;
+
+
+const uint32_t hashseed = 0xabcd1234;
+
 // Declare data structure
 DECLARE_HASHTABLE(st_heads, HASHBITS);
 LIST_HEAD(rulelist);
+
+inline uint32_t nowBysec(void) {
+    ktime_t t = ktime_to_us(ktime_get());
+    return t / USEC_PER_SEC - startTimeStamp;
+}
 
 static bool ruleList_add(const RuleTableItem* critem) {
     rulelistNode* rulenode;
@@ -41,6 +58,7 @@ static bool ruleList_add(const RuleTableItem* critem) {
     memcpy(&rulenode->ruleitem, critem, sizeof(RuleTableItem));
     list_add(&rulenode->listnode, &rulelist);
 
+    ++tot_rules;
     return 1;
 }
 
@@ -141,7 +159,7 @@ static bool statehashTable_add(const StateTableItem* citem) {
         return 0;
     }
     
-    memcpy(&listnode->st_item, citem, itemlen);
+    memcpy(&listnode->st_item, citem, stateItemlen);
 
     // printk("BEFORE ADD EXPIRED %u", listnode->st_item.expire);
     // spin_lock_irqsave(&stateHashTable_lock, lockflags);
@@ -230,7 +248,7 @@ static void statehashTable_destory(void){
             // p = hlist_entry(pos, st_hashlistNode, hlistNode);
             p = stateTable_entry(pos);
 
-            printCoreMsg(&p->st_item);
+            // printCoreMsg(&p->st_item);
 
             kfree(p);
             a++;
