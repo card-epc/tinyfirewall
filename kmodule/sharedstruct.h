@@ -36,6 +36,13 @@ typedef struct {
 } coreMsg;
 
 typedef struct {
+    uint32_t internal_ip;
+    uint32_t external_ip;
+    uint16_t intelnal_port;
+    uint16_t external_port;
+} NatTableItem;
+
+typedef struct {
     uint8_t  proto;
     uint8_t  state;
     coreMsg  core;
@@ -54,6 +61,7 @@ typedef struct {
 } RuleTableItem;
 
 const uint32_t corelen = sizeof(coreMsg);
+const uint32_t natItemlen = sizeof(NatTableItem);
 const uint32_t ruleItemlen = sizeof(RuleTableItem);
 const uint32_t stateItemlen = sizeof(StateTableItem);
 

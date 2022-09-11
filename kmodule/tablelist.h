@@ -21,10 +21,16 @@ extern uint32_t tot_conns;
 #define HASHMASK ((HTABSIZE) - 1)
 
 #define stateTable_entry(pos) hlist_entry(pos, st_hashlistNode, hlistNode)
+#define natList_entry(pos)    list_entry(pos, natlistNode, listnode)
 #define ruleList_entry(pos)   list_entry(pos, rulelistNode, listnode)
 
 #define statetable_node_del(pos) \
 { static_assert(__same_type((pos), struct hlist_node*));hlist_del(pos);kfree(stateTable_entry(pos));--tot_conns; }
+
+typedef struct {
+    NatTableItem natitem;
+    struct list_head listnode;
+} natlistNode;
 
 typedef struct {
     RuleTableItem ruleitem;
@@ -42,12 +48,60 @@ const uint32_t hashseed = 0xabcd1234;
 // Declare data structure
 DECLARE_HASHTABLE(st_heads, HASHBITS);
 LIST_HEAD(rulelist);
+LIST_HEAD(natlist);
 
 inline uint32_t nowBysec(void) {
     ktime_t t = ktime_to_us(ktime_get());
     return t / USEC_PER_SEC - startTimeStamp;
 }
 
+static bool natList_add(const NatTableItem* cnitem) {
+    natlistNode* natnode;
+    
+    natnode = (natlistNode*)kmalloc(sizeof(natlistNode), GFP_KERNEL);
+    if (natnode == NULL) {
+        printk("nat List Add Kmalloc Error");
+        return 0;
+    }
+    
+    memcpy(&natnode->natitem, cnitem, sizeof(NatTableItem));
+    list_add(&natnode->listnode, &natlist);
+
+    ++tot_nats;
+    return 1;
+}
+
+static void natList_del(uint32_t idnum) {
+    uint32_t idx = idnum;
+    struct list_head *pos, *n;
+    natlistNode* p;
+
+    list_for_each_safe(pos, n, &natlist) {
+        if (idx == 0) {
+            p = natList_entry(pos);
+            list_del(pos);
+            kfree(p);
+            --tot_nats;
+            printk("nat List Node %u was Del", idnum);
+            break;
+        } else {
+            --idx;
+        }
+    }
+}
+
+static void natList_destory(void) {
+    struct list_head *pos, *n; 
+    natlistNode *p;
+
+    list_for_each_safe(pos, n, &natlist) {
+        p = natList_entry(pos);
+
+        list_del(pos);
+        printk("A natNode Delete IN DESTORY");
+        kfree(p);
+    }
+}
 static bool ruleList_add(const RuleTableItem* critem) {
     rulelistNode* rulenode;
     

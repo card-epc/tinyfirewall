@@ -35,6 +35,20 @@ static int32_t sendtouser(const uint8_t* buf, uint32_t len) {
     return netlink_unicast(nlsock, nl_skb, STATIC_PORT, MSG_DONTWAIT);
 }
 
+static void sendNatsToUser(void) {
+    NatTableItem tot_items[tot_nats];
+    uint32_t idx = 0;
+    struct list_head *pos, *n;
+    natlistNode* p;
+
+    list_for_each_safe(pos, n, &natlist) {
+        p = natList_entry(pos);
+        memcpy(tot_items + idx++, &p->natitem, natItemlen);
+    }
+
+    sendtouser((void*)tot_items, sizeof(tot_items));
+}
+
 static void sendRulesToUser(void) {
     RuleTableItem tot_items[tot_rules];
     uint32_t idx = 0;
@@ -52,12 +66,14 @@ static void sendRulesToUser(void) {
 static void sendConnToUser(void) {
     StateTableItem tot_items[tot_conns];
     int i, idx = 0;
+    uint32_t timenow = nowBysec();
     st_hashlistNode *p;
     struct hlist_node *pos, *n;
 
     for (i = 0; i < HTABSIZE; i++) {
         hlist_for_each_safe(pos, n, &st_heads[i]){
             p = stateTable_entry(pos);
+            if (p->st_item.expire < timenow) p->st_item.expire = 0;
             memcpy(tot_items + idx++, &p->st_item, stateItemlen);
             printk("Head %d has send to the user ...\n", i);
         }
@@ -68,7 +84,8 @@ static void sendConnToUser(void) {
 static void recvfromuser(struct sk_buff* skb) {
     struct nlmsghdr *nl_hdr = NULL;
     uint8_t *data = NULL;
-    uint8_t type;
+    uint8_t type, id;
+    NatTableItem  nitem;
     RuleTableItem ritem;
     // const char *str = "This is KERNEL";
     uint32_t payload_len = skb->len - NLMSG_HDRLEN;
@@ -90,16 +107,23 @@ static void recvfromuser(struct sk_buff* skb) {
                 sendRulesToUser();
                 break;
             case RULE_DEL:
-                printk("RULE DEL");
+                id = *(data + 1);
+                printk("RULE DEL %u", id);
+                ruleList_del(id);
                 break;
             case NAT_ADD:
                 printk("NAT ADD");
+                memcpy(&nitem, data + 1, natItemlen);
+                natList_add(&nitem);
                 break;
             case NAT_SHOW:
                 printk("NAT_SHOW");
+                sendNatsToUser();
                 break;
             case NAT_DEL:
-                printk("NAT_DEL");
+                id = *(data + 1);
+                printk("NAT_DEL %u", id);
+                natList_del(id);
                 break;
             case CONNETION_SHOW:
                 printk("CONNETION_SHOW");

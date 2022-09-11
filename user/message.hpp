@@ -35,9 +35,9 @@ class KernelLink {
         KernelLink(const KernelLink&& k) = delete;
         KernelLink& operator=(const KernelLink& k) = delete;
 
+        void changeParser(Parser* newparser);
         void sendMsgtoKernel(const void *data, uint32_t len);
         void recvMsgfromKernel();
-        void ParseMsg() {  };
 
     private:
         void init ();
@@ -69,6 +69,10 @@ void KernelLink::init() {
         exit(-1);
     }
 
+}
+
+void KernelLink::changeParser(Parser *newparser) {
+    this->parser.reset(newparser);
 }
 
 void KernelLink::sendMsgtoKernel(const void *data, uint32_t len) {

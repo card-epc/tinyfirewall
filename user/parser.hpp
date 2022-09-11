@@ -13,10 +13,31 @@ class Parser {
         virtual ~Parser() {  }
 };
 
+class NoParser: public Parser {
+    public:
+        virtual void ParseMsg(const void *data, uint32_t len) override {  }
+};
+
 class TextParser : public Parser {
     public:
         virtual void ParseMsg(const void *data, uint32_t len) override {
             write(1, data, len);
+        }
+};
+
+class NatItemParser: public Parser {
+    public:
+        virtual void ParseMsg(const void *data, uint32_t len) override {
+            NatTableItem item;
+            uint32_t nums = len / natItemlen;
+            if (nums == 0) { printf("No nats\n");return; }
+            printf("ALL Nats: %u\n", nums);
+            for (uint32_t idx = 0; idx < len; idx+=natItemlen) {
+                memcpy(&item, ((uint8_t*)data) + idx, natItemlen);
+                printf("num: %u\n", idx/natItemlen);
+                printf("Internal ip: %u, External ip: %u\n", item.internal_ip, item.external_ip);
+                printf("Internal port: %u, External port: %u\n", item.intelnal_port, item.external_port);
+            }
         }
 };
 
@@ -25,6 +46,7 @@ class RuleItemParser : public Parser {
         virtual void ParseMsg(const void *data, uint32_t len) override {
             RuleTableItem item;
             uint32_t nums = len / ruleItemlen;
+            if (nums == 0) { printf("No Rules\n");return; }
             printf("ALL Rules: %u\n", nums);
             for (uint32_t idx = 0; idx < len; idx+=ruleItemlen) {
                 memcpy(&item, ((uint8_t*)data) + idx, ruleItemlen);
@@ -42,6 +64,7 @@ class ConnectionParser: public Parser {
         virtual void ParseMsg(const void *data, uint32_t len) override {
             StateTableItem item;
             uint32_t nums = len / stateItemlen;
+            if (nums == 0) { printf("No Connections\n");return; }
             printf("ALL Conns: %u\n", nums);
             for (uint32_t idx = 0; idx < len; idx+=stateItemlen) {
                 memcpy(&item, ((uint8_t*)data) + idx, stateItemlen);
