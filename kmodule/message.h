@@ -46,7 +46,23 @@ static void sendRulesToUser(void) {
         memcpy(tot_items + idx++, &p->ruleitem, ruleItemlen);
     }
 
-    sendtouser((void*)tot_items, tot_rules * ruleItemlen);
+    sendtouser((void*)tot_items, sizeof(tot_items));
+}
+
+static void sendConnToUser(void) {
+    StateTableItem tot_items[tot_conns];
+    int i, idx = 0;
+    st_hashlistNode *p;
+    struct hlist_node *pos, *n;
+
+    for (i = 0; i < HTABSIZE; i++) {
+        hlist_for_each_safe(pos, n, &st_heads[i]){
+            p = stateTable_entry(pos);
+            memcpy(tot_items + idx++, &p->st_item, stateItemlen);
+            printk("Head %d has send to the user ...\n", i);
+        }
+    }
+    sendtouser((void*)tot_items, sizeof(tot_items));
 }
 
 static void recvfromuser(struct sk_buff* skb) {
@@ -87,6 +103,7 @@ static void recvfromuser(struct sk_buff* skb) {
                 break;
             case CONNETION_SHOW:
                 printk("CONNETION_SHOW");
+                sendConnToUser();
                 break;
             case LOG:
                 printk("LOG");

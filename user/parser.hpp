@@ -37,4 +37,20 @@ class RuleItemParser : public Parser {
         }
 };
 
+class ConnectionParser: public Parser {
+    public:
+        virtual void ParseMsg(const void *data, uint32_t len) override {
+            StateTableItem item;
+            uint32_t nums = len / stateItemlen;
+            printf("ALL Conns: %u\n", nums);
+            for (uint32_t idx = 0; idx < len; idx+=stateItemlen) {
+                memcpy(&item, ((uint8_t*)data) + idx, stateItemlen);
+                printf("num: %u\n", idx / stateItemlen);
+                printf("Foreign ip: %u, Local ip: %u\n", item.core.foren_ip, item.core.local_ip);
+                printf("Foreign port: %u, Local port: %u\n", item.core.fport, item.core.lport);
+                printf("Protocol: %u, Expired: %u\n", item.proto, item.expire);
+            }
+        }
+};
+
 #endif

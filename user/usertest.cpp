@@ -26,9 +26,9 @@ int main(int argc, char **argv)
         .action = 1,
     };
     memcpy(n_rule.data, &temp, ruleItemlen);
-    KernelLink k(new RuleItemParser);
+    KernelLink k(new ConnectionParser);
     k.sendMsgtoKernel(&n_rule, sizeof(n_rule));
-    n_rule.type = RULE_SHOW;
+    n_rule.type = CONNETION_SHOW;
     k.sendMsgtoKernel(&n_rule, 1);
     k.recvMsgfromKernel();
     return 0;

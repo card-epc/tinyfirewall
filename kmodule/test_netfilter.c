@@ -57,7 +57,8 @@ uint32_t startTimeStamp = 0;
 struct sock* nlsock = NULL;
 bool default_rule = true;
 uint32_t tot_rules = 0;
-uint32_t tot_nats = 0;
+uint32_t tot_nats  = 0;
+uint32_t tot_conns = 0;
 
 typedef struct hlist_head st_hashlistHead;
 

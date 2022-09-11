@@ -12,6 +12,8 @@ extern unsigned long   lockflags;
 extern uint32_t startTimeStamp;
 extern bool default_rule;
 extern uint32_t tot_rules;
+extern uint32_t tot_nats;
+extern uint32_t tot_conns;
 
 // Hash Table Config
 #define HASHBITS 10
@@ -22,7 +24,7 @@ extern uint32_t tot_rules;
 #define ruleList_entry(pos)   list_entry(pos, rulelistNode, listnode)
 
 #define statetable_node_del(pos) \
-{ static_assert(__same_type((pos), struct hlist_node*));hlist_del(pos);kfree(stateTable_entry(pos)); }
+{ static_assert(__same_type((pos), struct hlist_node*));hlist_del(pos);kfree(stateTable_entry(pos));--tot_conns; }
 
 typedef struct {
     RuleTableItem ruleitem;
@@ -72,6 +74,7 @@ static void ruleList_del(uint32_t idnum) {
             p = ruleList_entry(pos);
             list_del(pos);
             kfree(p);
+            --tot_rules;
             printk("Rule List Node %u was Del", idnum);
             break;
         } else {
@@ -164,6 +167,7 @@ static bool statehashTable_add(const StateTableItem* citem) {
     // printk("BEFORE ADD EXPIRED %u", listnode->st_item.expire);
     // spin_lock_irqsave(&stateHashTable_lock, lockflags);
     hash_add(st_heads, &(listnode->hlistNode), hash);    
+    ++tot_conns;
     // spin_unlock_irqrestore(&stateHashTable_lock, lockflags);
     
     return 1;
@@ -191,6 +195,7 @@ static struct hlist_node* statehashTable_exist(const StateTableItem* citem) {
                 printk("ONE CONNCTION EXPIRED %u : %u", p->st_item.expire, nowBysec());
                 hlist_del(pos);
                 kfree(p);
+                --tot_conns;
                 break;
             }
         }
@@ -217,6 +222,7 @@ static void statehashTable_del(const StateTableItem* citem) {
             // printCoreMsg(&p->st_item);
             hlist_del(pos);
             kfree(p);
+            --tot_conns;
         }
     }
     // spin_unlock(&stateHashTable_lock);
