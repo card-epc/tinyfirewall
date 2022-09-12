@@ -36,7 +36,7 @@ class NatItemParser: public Parser {
                 memcpy(&item, ((uint8_t*)data) + idx, natItemlen);
                 printf("num: %u\n", idx/natItemlen);
                 printf("Internal ip: %u, External ip: %u\n", item.internal_ip, item.external_ip);
-                printf("Internal port: %u, External port: %u\n", item.intelnal_port, item.external_port);
+                printf("Internal port: %u, External port: %u\n", item.internal_port, item.external_port);
             }
         }
 };
