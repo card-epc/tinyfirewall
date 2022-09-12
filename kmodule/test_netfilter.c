@@ -131,21 +131,35 @@ static bool check_nat_tranform_out(struct sk_buff *skb) {
     uint16_t port_val  = ntohs(*port_ptr);
     uint16_t tot_len   = ntohs(ipHeader->tot_len);
     uint16_t iph_len   = ip_hdrlen(skb);
-    uint16_t datalen   = tot_len - iph_len;
+    uint16_t tcp_len   = tot_len - ipHeader->ihl * 4;
 
 
+    
     list_for_each_safe(pos, n, &natlist) {
         p = natList_entry(pos);
         if (p->natitem.internal_ip == ip_val && p->natitem.internal_port == port_val) {
             printk("NAT OUT TRANFORM");
             *ip_ptr = htonl(p->natitem.external_ip);
             *port_ptr = htons(p->natitem.external_port);
-            /* ip_send_check(ipHeader); */
+
+            /* skb->ip_summed = CHECKSUM_NONE; */
+            /* skb->csum_valid = 0; */
+            /* ipHeader->check = 0; */
+            /* ipHeader->check = ip_fast_csum(ipHeader, ipHeader->ihl); */
+            /*  */
+            /* if (skb_is_nonlinear(skb)) */
+            /*     skb_linearize(skb); */
+            /*  */
+            /* skb->csum = 0; */
+            /* tcpHeader->check = 0; */
+            /* tcpHeader->check = tcp_v4_check(tcp_len, ipHeader->saddr, ipHeader->daddr,  */
+            /*         csum_partial(tcpHeader, tcp_len, 0)); */
+            
             ipHeader->check = 0;
             ipHeader->check = ip_fast_csum(ipHeader, ipHeader->ihl);
-            /* tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr, ipHeader->daddr, */
-            /*                           datalen, ipHeader->protocol, */
-            /*                           csum_partial((char *)tcpHeader, datalen, 0)); */
+            tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr, ipHeader->daddr,
+                                      tcp_len, ipHeader->protocol,
+                                      csum_partial((char *)tcpHeader, tcp_len, 0));
             skb->ip_summed = CHECKSUM_UNNECESSARY;
             tcpHeader->check = 0;
             tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr,ipHeader->daddr,(ntohs(ipHeader->tot_len)-ipHeader->ihl*4), IPPROTO_TCP,csum_partial(tcpHeader,(ntohs(ipHeader->tot_len)-ipHeader->ihl*4),0));
