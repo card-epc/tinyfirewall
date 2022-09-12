@@ -10,6 +10,8 @@
 #include <linux/netlink.h>
 #include <linux/in_route.h>
 #include <net/ip.h>
+#include <net/tcp.h>
+#include <net/checksum.h>
 #include <linux/mutex.h>
 #include <linux/hashtable.h>
 #include <linux/types.h>
@@ -97,15 +99,20 @@ static bool check_nat_tranform_in(struct sk_buff *skb) {
         p = natList_entry(pos);
         if (p->natitem.external_ip == ip_val && p->natitem.external_port == port_val) {
             printk("NAT IN TRANFORM");
-            *ip_ptr = htonl(p->natitem.internal_ip), *port_ptr = htons(p->natitem.internal_port);
-            printk("PORT AFTER MODIFY: %u", ntohs(tcpHeader->dest));
+            *ip_ptr = htonl(p->natitem.internal_ip);
+            *port_ptr = htons(p->natitem.internal_port);
             tcpHeader->check = 0;
-            skb->csum = csum_partial((void *)tcpHeader, tot_len-iph_len, 0);
-            tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr, ipHeader->daddr, tot_len - iph_len,
-                                ipHeader->protocol, skb->csum);
+            /* tcpHeader->check = tcp_v4_check(tot_len-iph_len, ipHeader->saddr, ipHeader->daddr, */
+            /*         (csum_partial((void*)tcpHeader, tot_len-iph_len, 0))); */
+            skb->csum = csum_partial((uint8_t *)tcpHeader, tot_len-iph_len, 0);
+            tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr, ipHeader->daddr,
+                    ntohs(ipHeader->tot_len) - iph_len, ipHeader->protocol, skb->csum);
             ipHeader->check = 0;
+            /* ip_send_check(ipHeader); */
             ipHeader->check = ip_fast_csum(ipHeader, ipHeader->ihl);
+            /* ipHeader->id = 0; */
             return 1;
+
         }
     }
 
@@ -124,20 +131,26 @@ static bool check_nat_tranform_out(struct sk_buff *skb) {
     uint16_t port_val  = ntohs(*port_ptr);
     uint16_t tot_len   = ntohs(ipHeader->tot_len);
     uint16_t iph_len   = ip_hdrlen(skb);
+    uint16_t datalen   = tot_len - iph_len;
 
 
     list_for_each_safe(pos, n, &natlist) {
         p = natList_entry(pos);
         if (p->natitem.internal_ip == ip_val && p->natitem.internal_port == port_val) {
             printk("NAT OUT TRANFORM");
-            *ip_ptr = htonl(p->natitem.external_ip), *port_ptr = htons(p->natitem.external_port);
-            printk("PORT AFTER MODIFY: %u", ntohs(tcpHeader->source));
-            tcpHeader->check = 0;
-            skb->csum = csum_partial((void *)tcpHeader, tot_len-iph_len, 0);
-            tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr, ipHeader->daddr, ntohs(ipHeader->tot_len) - iph_len,
-                                ipHeader->protocol, skb->csum);
+            *ip_ptr = htonl(p->natitem.external_ip);
+            *port_ptr = htons(p->natitem.external_port);
+            /* ip_send_check(ipHeader); */
             ipHeader->check = 0;
             ipHeader->check = ip_fast_csum(ipHeader, ipHeader->ihl);
+            /* tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr, ipHeader->daddr, */
+            /*                           datalen, ipHeader->protocol, */
+            /*                           csum_partial((char *)tcpHeader, datalen, 0)); */
+            skb->ip_summed = CHECKSUM_UNNECESSARY;
+            tcpHeader->check = 0;
+            tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr,ipHeader->daddr,(ntohs(ipHeader->tot_len)-ipHeader->ihl*4), IPPROTO_TCP,csum_partial(tcpHeader,(ntohs(ipHeader->tot_len)-ipHeader->ihl*4),0));
+            skb->csum = offsetof(struct tcphdr, check);
+            printk("Id %u", ntohs(ipHeader->id));
             return 1;
         }
     }
@@ -250,7 +263,13 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
 
     if (isIn) { 
         SWAP_VALUE(temp.core.foren_ip, temp.core.local_ip);
-        SWAP_VALUE(temp.core.fport, temp.core.lport);
+        SWAP_VALUE(temp.core.fport,    temp.core.lport);
+    }
+
+    if (temp.core.lport == 4444) {
+        printk("OUT NAT TRANSFORM 4444 IDENTI: %d", ipHeader->id);
+    } else {
+        printk("LOCAL PORT %u", temp.core.lport);
     }
     
     exist_pos = statehashTable_exist(&temp);
@@ -268,7 +287,6 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
                 /* statehashTable_del(retItemptr); */
             } else {
                 temp.expire = nowBysec() + TCP_DELAY;
-                printk("A TCP CONNETION UPDATE TO %u", temp.expire);
                 if (retItemptr->state != stateTemp)
                     printk("STATE CHANGE from %d to %d", retItemptr->state, stateTemp);
                 retItemptr->state = stateTemp;
@@ -313,17 +331,11 @@ static uint32_t test_nf_pre_routing(void *priv, struct sk_buff *skb, const struc
         case ICMP:
             return check_icmp_status(skb, true);
         case TCP:
-            if (check_nat_tranform_in(skb)) {
-                return NF_ACCEPT;
-            } else {
-                return check_tcp_status(skb, in_tcp_state_tranform_buf, true);
-            }
+            (check_nat_tranform_in(skb));
+            return check_tcp_status(skb, in_tcp_state_tranform_buf, true);
         case UDP:
-            if (check_nat_tranform_in(skb)) {
-                return NF_ACCEPT;
-            } else {
-                return check_udp_status(skb, true);
-            }
+            (check_nat_tranform_in(skb));
+            return check_udp_status(skb, true);
         default:
             return NF_ACCEPT;
             
@@ -337,22 +349,19 @@ static uint32_t test_nf_post_routing(void *priv, struct sk_buff *skb, const stru
     /* printk("this is test_nf_local_output 666"); */
     /* printk("out name : %s", state->out->name); */
     /* printk("in  name : %s", state->in->name); */
+    uint32_t ret;
     const struct iphdr *ipheader = ip_hdr(skb);
     switch (ipheader->protocol) {
         case ICMP:
             return check_icmp_status(skb, false);
         case TCP:
-            if (check_nat_tranform_out(skb)) {
-                return NF_ACCEPT;
-            } else {
-                return check_tcp_status(skb, out_tcp_state_tranform_buf, false);
-            }
+            ret = check_tcp_status(skb, out_tcp_state_tranform_buf, false);
+            (check_nat_tranform_out(skb));
+            return ret;
         case UDP:
-            if (check_nat_tranform_out(skb)) {
-                return NF_ACCEPT;
-            } else {
-                return check_udp_status(skb, false);
-            }
+            ret = check_udp_status(skb, false);
+            (check_nat_tranform_out(skb));
+            return ret;
         default:
             return NF_ACCEPT;
             
