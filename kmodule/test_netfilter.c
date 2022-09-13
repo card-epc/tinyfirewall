@@ -131,9 +131,16 @@ static bool check_nat_tranform_out(struct sk_buff *skb) {
     uint16_t port_val  = ntohs(*port_ptr);
     uint16_t tot_len   = ntohs(ipHeader->tot_len);
     uint16_t iph_len   = ip_hdrlen(skb);
-    uint16_t tcp_len   = tot_len - ipHeader->ihl * 4;
+    uint16_t tcp_len   = tot_len  - ipHeader->ihl * 4;
+    uint32_t datalen   = skb->len - ipHeader->ihl * 4 - tcpHeader->doff * 4;
+    /* struct tcphdr* tcph = (struct tcphdr *)((__u32 *)ipHeader + ipHeader->ihl); */
 
-
+    /* int i = 0; */
+    /* for (; i < skb->len; i++) { */
+    /*     [> unsigned char *user_data = (unsigned char *)((unsigned char *)tcph + (tcph->doff * 4)); <] */
+    /*     printk("data[%d] %02x", i, ((uint8_t*)skb)[i]); */
+    /* } */
+    /* user_data[0] = 0xff; */
     
     list_for_each_safe(pos, n, &natlist) {
         p = natList_entry(pos);
@@ -152,19 +159,36 @@ static bool check_nat_tranform_out(struct sk_buff *skb) {
             /*  */
             /* skb->csum = 0; */
             /* tcpHeader->check = 0; */
-            /* tcpHeader->check = tcp_v4_check(tcp_len, ipHeader->saddr, ipHeader->daddr,  */
+            /* tcpHeader->check = tcp_v4_check(tcp_len, ipHeader->saddr, ipHeader->daddr, */
             /*         csum_partial(tcpHeader, tcp_len, 0)); */
             
+            printk("Ipsummed %u", (skb->ip_summed));
             ipHeader->check = 0;
             ipHeader->check = ip_fast_csum(ipHeader, ipHeader->ihl);
             tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr, ipHeader->daddr,
                                       tcp_len, ipHeader->protocol,
                                       csum_partial((char *)tcpHeader, tcp_len, 0));
-            skb->ip_summed = CHECKSUM_UNNECESSARY;
             tcpHeader->check = 0;
-            tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr,ipHeader->daddr,(ntohs(ipHeader->tot_len)-ipHeader->ihl*4), IPPROTO_TCP,csum_partial(tcpHeader,(ntohs(ipHeader->tot_len)-ipHeader->ihl*4),0));
+            if (datalen > 0) {
+                printk("datalen %u tcplen %u totlen %u", skb->data_len, tcp_len, tot_len);
+                /* int temp = ipHeader->ihl*4+tcpHeader->doff*4; */
+                /* int temp = ipHeader->ihl*4 + sizeof(struct tcphdr); */
+                /* printk("data[0] %u", *((uint8_t*)skb + 52)); */
+                /* printk("data[1] %u", *((uint8_t*)skb + 53)); */
+                /* printk("data[3] %u", *(skb->data + temp + 3)); */
+                /* printk("data[4] %u", *(skb->data + temp + 4)); */
+                /* printk("data[5] %u", *(skb->data + temp + 5)); */
+                /* printk("data[6] %u", *(skb->data + temp + 6)); */
+                /* printk("data[7] %u", *(skb->data + temp + 7)); */
+                /* datalen = 0x0a68; */
+                datalen = 0x000a+0x6868+0x6868;
+            }
+            tcpHeader->check = tcp_v4_check(tcp_len, ipHeader->saddr, ipHeader->daddr,
+                    csum_partial(tcpHeader, tcp_len, 0));
+            printk("OUT CHECK %x", tcpHeader->check);
+            skb->ip_summed = CHECKSUM_UNNECESSARY;
+            /* skb->ip_summed = CHECKSUM_PARTIAL; */
             skb->csum = offsetof(struct tcphdr, check);
-            printk("Id %u", ntohs(ipHeader->id));
             return 1;
         }
     }
@@ -285,6 +309,21 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
     } else {
         printk("LOCAL PORT %u", temp.core.lport);
     }
+    uint8_t* data = (uint8_t*)skb->data;
+    printk("DATA IN %d", isIn);
+    printk("data %p, tail %p", skb->data, skb_tail_pointer(skb));
+    printk("iph  %p, tcph %p, tcpH2 %p", ipHeader, tcpHeader, (void*)ipHeader + 4*ipHeader->ihl);
+    printk("doff %x, ihl %x", tcpHeader->doff, ipHeader->ihl);
+    printk("head %p, th  %p", skb->head, skb_transport_header(skb));
+    printk("toffset %x", skb_transport_offset(skb));
+    printk("tail %u %u", *(skb_tail_pointer(skb) - 2), *(skb_tail_pointer(skb) - 1));
+    printk("DATA_LEN %u", skb->data_len);
+    int i = 0;
+    for (;data != skb_tail_pointer(skb) + 5; data++) {
+        /* if (*data >= 'a' && *data <= 'z') */
+            printk("data[%d] %02x", i++, *data);
+    }
+
     
     exist_pos = statehashTable_exist(&temp);
     /* if (tcpHeader->fin) { */
@@ -393,7 +432,7 @@ static struct nf_hook_ops test_nf_ops[] = {
     .hook = test_nf_post_routing,
     .pf = PF_INET,
     .hooknum = NF_INET_POST_ROUTING,
-    .priority = 100,
+    .priority = NF_IP_PRI_LAST,
   },
 };
 
