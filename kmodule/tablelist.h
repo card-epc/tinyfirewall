@@ -5,27 +5,28 @@
 #include <linux/hash.h>
 #include <linux/xxhash.h>
 #include <linux/slab.h>
+#include <linux/icmp.h>
 #include "sharedstruct.h"
 
-extern spinlock_t stateHashTable_lock;
-extern unsigned long   lockflags;
-extern uint32_t startTimeStamp;
-extern bool default_rule;
-extern uint32_t tot_rules;
-extern uint32_t tot_nats;
-extern uint32_t tot_conns;
 
 // Hash Table Config
 #define HASHBITS 10
 #define HTABSIZE (1 << HASHBITS)
 #define HASHMASK ((HTABSIZE) - 1)
 
-#define stateTable_entry(pos) hlist_entry(pos, st_hashlistNode, hlistNode)
-#define natList_entry(pos)    list_entry(pos, natlistNode, listnode)
-#define ruleList_entry(pos)   list_entry(pos, rulelistNode, listnode)
+#define stateTable_entry(pos)    hlist_entry(pos, st_hashlistNode, hlistNode)
+#define natList_entry(pos)       list_entry(pos, natlistNode, listnode)
+#define ruleList_entry(pos)      list_entry(pos, rulelistNode, listnode)
+#define logmsgList_entry(pos)    list_entry(pos, logmsglistNode, listnode)
 
 #define statetable_node_del(pos) \
 { static_assert(__same_type((pos), struct hlist_node*));hlist_del(pos);kfree(stateTable_entry(pos));--tot_conns; }
+
+
+typedef struct {
+    char   msg[100];
+    struct list_head listnode;
+} logmsglistNode;
 
 typedef struct {
     NatTableItem natitem;
@@ -43,18 +44,81 @@ typedef struct {
 } st_hashlistNode;
 
 
+extern bool default_rule;
+extern struct file *logfile;
+extern uint32_t startTimeStamp;
+extern uint32_t tot_rules;
+extern uint32_t tot_nats;
+extern uint32_t tot_conns;
+extern struct mutex mtx;
+extern struct work_struct log_work;
+
+extern unsigned long   lockflags;
+extern spinlock_t stateHashTable_lock;
+
 const uint32_t hashseed = 0xabcd1234;
 
 // Declare data structure
 DECLARE_HASHTABLE(st_heads, HASHBITS);
 LIST_HEAD(rulelist);
 LIST_HEAD(natlist);
+LIST_HEAD(logmsglist);
 
 inline uint32_t nowBysec(void) {
     ktime_t t = ktime_to_us(ktime_get());
     return t / USEC_PER_SEC - startTimeStamp;
 }
 
+static void log_write(void* buf, uint32_t len) {
+    loff_t pos = 0;
+    mm_segment_t old_fs = get_fs();
+    int64_t ret;
+    set_fs(KERNEL_DS);
+
+    ret = vfs_write(logfile, buf, len, &pos);
+    if (ret == -EINVAL) {
+        printk("VFS WRITE EINVAL");
+    } else if (ret != len) {
+        printk("write exists error. RET %lld", ret);
+    } else {
+        printk("Log An Item");
+    }
+
+    set_fs(old_fs);
+}
+
+static bool logmsgList_add(const void *data, uint32_t len) {
+    logmsglistNode* logmsgnode;
+    
+    logmsgnode = (logmsglistNode*)kmalloc(sizeof(logmsglistNode), GFP_KERNEL);
+    if (logmsgnode == NULL) {
+        printk("logmsg List Add Kmalloc Error");
+        return 0;
+    }
+    
+    memcpy(logmsgnode->msg, data, len);
+    mutex_lock(&mtx);
+    list_add_tail(&logmsgnode->listnode, &logmsglist);
+    mutex_unlock(&mtx);
+
+    schedule_work(&log_work);
+    return 1;
+}
+
+static void logmsgList_destory(void) {
+    struct list_head *pos, *n; 
+    logmsglistNode *p;
+    
+    if (!list_empty(&logmsglist)) {
+        printk("There are Some Logs Lost");
+    }
+
+    list_for_each_safe(pos, n, &logmsglist) {
+        p = logmsgList_entry(pos);
+        list_del(pos);
+        kfree(p);
+    }
+}
 static bool natList_add(const NatTableItem* cnitem) {
     natlistNode* natnode;
     
@@ -65,9 +129,10 @@ static bool natList_add(const NatTableItem* cnitem) {
     }
     
     memcpy(&natnode->natitem, cnitem, sizeof(NatTableItem));
-    list_add(&natnode->listnode, &natlist);
 
+    list_add(&natnode->listnode, &natlist);
     ++tot_nats;
+
     return 1;
 }
 
@@ -209,8 +274,6 @@ static bool statehashTable_add(const StateTableItem* citem) {
     st_hashlistNode *listnode;
     uint32_t hash = 12345678;
 
-    printk("Hash Table Add an Item");
-
     hash = xxh32(&citem->core, corelen, hashseed);
     listnode = (st_hashlistNode*)kmalloc(sizeof(st_hashlistNode), GFP_KERNEL);
     if (listnode == NULL) {
@@ -220,11 +283,11 @@ static bool statehashTable_add(const StateTableItem* citem) {
     
     memcpy(&listnode->st_item, citem, stateItemlen);
 
-    // printk("BEFORE ADD EXPIRED %u", listnode->st_item.expire);
     // spin_lock_irqsave(&stateHashTable_lock, lockflags);
     hash_add(st_heads, &(listnode->hlistNode), hash);    
     ++tot_conns;
     // spin_unlock_irqrestore(&stateHashTable_lock, lockflags);
+    logmsgList_add("CONNCTION ADD", 13);
     
     return 1;
 }
@@ -236,11 +299,9 @@ static struct hlist_node* statehashTable_exist(const StateTableItem* citem) {
     uint32_t st_head_idx = hash_32(hash, HASHBITS);
     struct hlist_node *pos, *n;
     st_hashlistNode *p;
-    int i = 0;
 
-                // spin_lock_irqsave(&stateHashTable_lock, lockflags);
+    // spin_lock_irqsave(&stateHashTable_lock, lockflags);
     hlist_for_each_safe(pos, n, &st_heads[st_head_idx]) {
-        // p = hlist_entry(pos, st_hashlistNode, hlistNode);
         p = stateTable_entry(pos);
         // This connection must be unique, so if status is wrong, return 0;
         if (memcmp(&p->st_item.core, &citem->core, corelen) == 0) {
@@ -249,15 +310,15 @@ static struct hlist_node* statehashTable_exist(const StateTableItem* citem) {
                 return pos;
             } else {
                 printk("ONE CONNCTION EXPIRED %u : %u", p->st_item.expire, nowBysec());
+                logmsgList_add("CONNETION EXPIRED", 17);
                 hlist_del(pos);
                 kfree(p);
                 --tot_conns;
                 break;
             }
         }
-        printk("%d COMPARE TEST", i++);
     }
-                // spin_unlock_irqrestore(&stateHashTable_lock, lockflags);
+    // spin_unlock_irqrestore(&stateHashTable_lock, lockflags);
     return NULL;
 }
 
@@ -268,14 +329,10 @@ static void statehashTable_del(const StateTableItem* citem) {
     struct hlist_node *pos, *n;
     st_hashlistNode *p;
 
-    // printk("DEL INDEX: %d", st_head_idx);
     // spin_lock(&stateHashTable_lock);
     hlist_for_each_safe(pos, n, &st_heads[st_head_idx]){
-        // p = hlist_entry(pos, st_hashlistNode, hlistNode);
         p = stateTable_entry(pos);
         if (memcmp(&p->st_item.core, &citem->core, corelen) == 0) {
-            // printk("StatehashTable_del function");
-            // printCoreMsg(&p->st_item);
             hlist_del(pos);
             kfree(p);
             --tot_conns;
@@ -285,16 +342,8 @@ static void statehashTable_del(const StateTableItem* citem) {
 }
 
 static void statehashTable_init(void) {
-    //init head node
-    // int i;
-    // struct hlist_node *pos;
-    // st_hashlistNode *p;
-    // StateTableItem item = { .state = 1, .core.foren_ip = 1234, .core.local_ip = 5678 };
-
     printk("hashlist is starting...\n");
-    /* INIT_HLIST_HEAD(&st_heads); */
     hash_init(st_heads);
-
 }
 
 static void statehashTable_destory(void){
@@ -303,14 +352,9 @@ static void statehashTable_destory(void){
     struct hlist_node *pos, *n;
 
     for (i = 0; i < HTABSIZE; i++) {
-        //遍历数字链表
         hlist_for_each_safe(pos, n, &st_heads[i]){
-            //删除哈希节点
             hlist_del(pos);
-            // p = hlist_entry(pos, st_hashlistNode, hlistNode);
             p = stateTable_entry(pos);
-
-            // printCoreMsg(&p->st_item);
 
             kfree(p);
             a++;

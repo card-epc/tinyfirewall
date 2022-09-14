@@ -18,6 +18,13 @@
 #include <linux/icmp.h>
 #include "message.h"
 
+typedef struct hlist_head st_hashlistHead;
+
+
+struct netlink_kernel_cfg cfg = {
+    .input = recvfromuser,
+};
+
 // Define TCP_STATUS (some States are combined or deleted)
 enum TCP_STATUS { CLOSED = 1, LISTEN, SYN_SENT, SYN_RECV, ESTABLISHED, FIN_WAIT1, FIN_WAIT2, CLOSE_WAIT, LAST_ACK  };
 // Define TCP DATAPACKET SIGN
@@ -51,22 +58,38 @@ static int8_t out_tcp_state_tranform_buf[10][6] = {
     { -1, -1, -1, CLOSED, -1, -1 }                          // LAST_ACK
 };
 
+
 spinlock_t stateHashTable_lock;
 unsigned long lockflags;
 
-uint32_t startTimeStamp = 0;
-
 struct sock* nlsock = NULL;
+
+uint32_t startTimeStamp = 0;
 bool default_rule = true;
 uint32_t tot_rules = 0;
 uint32_t tot_nats  = 0;
 uint32_t tot_conns = 0;
 
-typedef struct hlist_head st_hashlistHead;
+struct file *logfile = NULL;
+struct mutex mtx;
+struct work_struct log_work;
 
-struct netlink_kernel_cfg cfg = {
-    .input = recvfromuser,
-};
+
+void work_func(struct work_struct *pwork) {
+
+    if (!list_empty(&logmsglist)) {
+
+        logmsglistNode *node = logmsgList_entry(logmsglist.next);
+        
+        printk("logMSG: %s", node->msg);
+
+        mutex_lock(&mtx);
+        list_del(logmsglist.next);
+        mutex_unlock(&mtx);
+
+        kfree(node);
+    }
+}
 
 
 static uint8_t get_TCP_sign(const struct tcphdr* head) {
@@ -102,15 +125,11 @@ static bool check_nat_tranform_in(struct sk_buff *skb) {
             *ip_ptr = htonl(p->natitem.internal_ip);
             *port_ptr = htons(p->natitem.internal_port);
             tcpHeader->check = 0;
-            /* tcpHeader->check = tcp_v4_check(tot_len-iph_len, ipHeader->saddr, ipHeader->daddr, */
-            /*         (csum_partial((void*)tcpHeader, tot_len-iph_len, 0))); */
             skb->csum = csum_partial((uint8_t *)tcpHeader, tot_len-iph_len, 0);
             tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr, ipHeader->daddr,
                     ntohs(ipHeader->tot_len) - iph_len, ipHeader->protocol, skb->csum);
             ipHeader->check = 0;
-            /* ip_send_check(ipHeader); */
             ipHeader->check = ip_fast_csum(ipHeader, ipHeader->ihl);
-            /* ipHeader->id = 0; */
             return 1;
 
         }
@@ -121,21 +140,23 @@ static bool check_nat_tranform_in(struct sk_buff *skb) {
 }
 
 static bool check_nat_tranform_out(struct sk_buff *skb) {
+    uint8_t *page;
+    uint32_t frag_len, frag_offset;
     natlistNode *p;
     struct list_head *pos, *n; 
     struct iphdr *ipHeader = ip_hdr(skb);
     struct tcphdr *tcpHeader = tcp_hdr(skb);
+    struct skb_shared_info *info = skb_shinfo(skb);
     uint32_t *ip_ptr   = (&ipHeader->saddr);
     uint16_t *port_ptr = (&tcpHeader->source);
     uint32_t ip_val    = ntohl(*ip_ptr);
     uint16_t port_val  = ntohs(*port_ptr);
     uint16_t tot_len   = ntohs(ipHeader->tot_len);
-    uint16_t iph_len   = ip_hdrlen(skb);
     uint16_t tcp_len   = tot_len  - ipHeader->ihl * 4;
     uint32_t datalen   = skb->len - ipHeader->ihl * 4 - tcpHeader->doff * 4;
+    uint32_t data_checksum = 0;
     /* struct tcphdr* tcph = (struct tcphdr *)((__u32 *)ipHeader + ipHeader->ihl); */
 
-    /* int i = 0; */
     /* for (; i < skb->len; i++) { */
     /*     [> unsigned char *user_data = (unsigned char *)((unsigned char *)tcph + (tcph->doff * 4)); <] */
     /*     printk("data[%d] %02x", i, ((uint8_t*)skb)[i]); */
@@ -148,46 +169,36 @@ static bool check_nat_tranform_out(struct sk_buff *skb) {
             printk("NAT OUT TRANFORM");
             *ip_ptr = htonl(p->natitem.external_ip);
             *port_ptr = htons(p->natitem.external_port);
-
-            /* skb->ip_summed = CHECKSUM_NONE; */
-            /* skb->csum_valid = 0; */
-            /* ipHeader->check = 0; */
-            /* ipHeader->check = ip_fast_csum(ipHeader, ipHeader->ihl); */
-            /*  */
-            /* if (skb_is_nonlinear(skb)) */
-            /*     skb_linearize(skb); */
-            /*  */
-            /* skb->csum = 0; */
-            /* tcpHeader->check = 0; */
-            /* tcpHeader->check = tcp_v4_check(tcp_len, ipHeader->saddr, ipHeader->daddr, */
-            /*         csum_partial(tcpHeader, tcp_len, 0)); */
-            
             printk("Ipsummed %u", (skb->ip_summed));
+            tcpHeader->check = 0;
             ipHeader->check = 0;
             ipHeader->check = ip_fast_csum(ipHeader, ipHeader->ihl);
-            tcpHeader->check = csum_tcpudp_magic(ipHeader->saddr, ipHeader->daddr,
-                                      tcp_len, ipHeader->protocol,
-                                      csum_partial((char *)tcpHeader, tcp_len, 0));
-            tcpHeader->check = 0;
+
+            // METHOD 1 GET DATA BUT CHECK SUM ERROR DON'T KNOW WHY
+            /* if (skb_is_nonlinear(skb)) */
+            /*     skb_linearize(skb); */
+            /* for (i = 0; i < datalen; i++) */
+            /*     printk("%x", *((char*)skb->data + ipHeader->ihl * 4 + tcpHeader->doff * 4 + i)); */
+            /* data_checksum = csum_partial((uint8_t*)skb->data + ipHeader->ihl*4 + tcpHeader->doff*4, datalen, 0); */
+            
+            // If need to calculate Data Checksum
             if (datalen > 0) {
-                printk("datalen %u tcplen %u totlen %u", skb->data_len, tcp_len, tot_len);
-                /* int temp = ipHeader->ihl*4+tcpHeader->doff*4; */
-                /* int temp = ipHeader->ihl*4 + sizeof(struct tcphdr); */
-                /* printk("data[0] %u", *((uint8_t*)skb + 52)); */
-                /* printk("data[1] %u", *((uint8_t*)skb + 53)); */
-                /* printk("data[3] %u", *(skb->data + temp + 3)); */
-                /* printk("data[4] %u", *(skb->data + temp + 4)); */
-                /* printk("data[5] %u", *(skb->data + temp + 5)); */
-                /* printk("data[6] %u", *(skb->data + temp + 6)); */
-                /* printk("data[7] %u", *(skb->data + temp + 7)); */
-                /* datalen = 0x0a68; */
-                datalen = 0x000a+0x6868+0x6868;
+
+                // Old Method -- Extract Data From Page
+                printk("nr_flag %u", info->nr_frags);
+                if (info->nr_frags) {
+
+                    page = page_address(info->frags[0].bv_page);
+                    frag_len = info->frags[0].bv_len;
+                    frag_offset = info->frags[0].bv_offset;
+                    printk("frag_len %u, frag_offset %u", frag_len, frag_offset);
+                    data_checksum = csum_partial(page + frag_offset, frag_len, 0);
+                }
             }
+            printk("datalen %08x\ndata_checksum %08x", datalen, data_checksum);
             tcpHeader->check = tcp_v4_check(tcp_len, ipHeader->saddr, ipHeader->daddr,
-                    csum_partial(tcpHeader, tcp_len, 0));
-            printk("OUT CHECK %x", tcpHeader->check);
+                    csum_partial(tcpHeader, tcp_len, data_checksum));
             skb->ip_summed = CHECKSUM_UNNECESSARY;
-            /* skb->ip_summed = CHECKSUM_PARTIAL; */
             skb->csum = offsetof(struct tcphdr, check);
             return 1;
         }
@@ -224,6 +235,7 @@ static uint32_t check_icmp_status(const struct sk_buff *skb, bool isIn) {
     }
 
 
+    logmsgList_add("ICMP", 4);
     exist_pos = statehashTable_exist(&temp);
     if (exist_pos) {
         retItemptr = &stateTable_entry(exist_pos)->st_item;
@@ -304,40 +316,17 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
         SWAP_VALUE(temp.core.fport,    temp.core.lport);
     }
 
-    if (temp.core.lport == 4444) {
-        printk("OUT NAT TRANSFORM 4444 IDENTI: %d", ipHeader->id);
-    } else {
-        printk("LOCAL PORT %u", temp.core.lport);
-    }
-    uint8_t* data = (uint8_t*)skb->data;
-    printk("DATA IN %d", isIn);
-    printk("data %p, tail %p", skb->data, skb_tail_pointer(skb));
-    printk("iph  %p, tcph %p, tcpH2 %p", ipHeader, tcpHeader, (void*)ipHeader + 4*ipHeader->ihl);
-    printk("doff %x, ihl %x", tcpHeader->doff, ipHeader->ihl);
-    printk("head %p, th  %p", skb->head, skb_transport_header(skb));
-    printk("toffset %x", skb_transport_offset(skb));
-    printk("tail %u %u", *(skb_tail_pointer(skb) - 2), *(skb_tail_pointer(skb) - 1));
-    printk("DATA_LEN %u", skb->data_len);
-    int i = 0;
-    for (;data != skb_tail_pointer(skb) + 5; data++) {
-        /* if (*data >= 'a' && *data <= 'z') */
-            printk("data[%d] %02x", i++, *data);
-    }
-
-    
+    /* log_write("TCP\n", 4); */
+    logmsgList_add("TCP", 3);
     exist_pos = statehashTable_exist(&temp);
-    /* if (tcpHeader->fin) { */
-    /*     printk("FIN PKT RECVED : NOW STATE %d", retItemptr->state); */
-    /* } */
     if (exist_pos) {
         retItemptr = &stateTable_entry(exist_pos)->st_item;
         stateTemp = trans_buf[retItemptr->state][temp.state];
         // -1 means maintain old state
         if (stateTemp != -1) {
             if (stateTemp == CLOSED) {
-                printk("CLOSED GET ONE <--> DELETE ONE FROM TABLE");
                 statetable_node_del(exist_pos);
-                /* statehashTable_del(retItemptr); */
+                logmsgList_add("CONNETION DEL ONE", 17);
             } else {
                 temp.expire = nowBysec() + TCP_DELAY;
                 if (retItemptr->state != stateTemp)
@@ -375,10 +364,8 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
 static uint32_t test_nf_pre_routing(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
     const struct iphdr *ipheader = ip_hdr(skb);
     /* const struct tcphdr* tcpheader = tcp_hdr(skb); */
-    /* printk("this is test_nf_pre_routing 111"); */
     /* printk("out name : %s", state->out->name); */
     /* printk("in  name : %s", state->in->name); */
-    /* printIPaddr(skb); */
     /* printk("Protocol %d", ipheader->protocol); */
     switch (ipheader->protocol) {
         case ICMP:
@@ -404,6 +391,7 @@ static uint32_t test_nf_post_routing(void *priv, struct sk_buff *skb, const stru
     /* printk("in  name : %s", state->in->name); */
     uint32_t ret;
     const struct iphdr *ipheader = ip_hdr(skb);
+    printk("post pid %u", current->pid);
     switch (ipheader->protocol) {
         case ICMP:
             return check_icmp_status(skb, false);
@@ -420,6 +408,8 @@ static uint32_t test_nf_post_routing(void *priv, struct sk_buff *skb, const stru
             
     }
 }
+
+
 
 static struct nf_hook_ops test_nf_ops[] = {
   {
@@ -441,8 +431,11 @@ static int __net_init test_netfilter_init(void) {
         .protocol = 0, .action = 1,
         .dst_port = 0, .src_port = 0,
         .dst_ip = 0, .src_ip = 0,
-        .dst_cidr = 0, .dst_cidr = 0,
+        .dst_cidr = 0,
     };
+
+    logfile = filp_open("test.log", O_WRONLY|O_CREAT|O_APPEND, S_IROTH|S_IRGRP|S_IRUSR|S_IWUSR);
+    if (IS_ERR(logfile)) printk("create file error");
 
     nlsock = netlink_kernel_create(&init_net, USER_MSG, &cfg);
     if (NULL == nlsock) {
@@ -463,15 +456,26 @@ static int __net_init test_netfilter_init(void) {
     item.src_ip = 3232274433;
     item.dst_ip = 3232274579;
     ruleList_add(&item);
-    
+
+    mutex_init(&mtx);
+
+    INIT_WORK(&log_work, work_func);
+
+    logmsgList_add("HELLO", 5);
+
     return nf_register_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 
 static void __net_exit test_netfilter_exit(void) {
+
+    if (logfile != NULL) {
+        filp_close(logfile, NULL);
+    }
     sock_release(nlsock->sk_socket);
     statehashTable_destory();
     ruleList_destory();
     natList_destory();
+    logmsgList_destory();
     nf_unregister_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 
