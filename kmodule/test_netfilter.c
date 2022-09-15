@@ -70,10 +70,19 @@ uint32_t tot_rules = 0;
 uint32_t tot_nats  = 0;
 uint32_t tot_conns = 0;
 
+char   logfilename[20];
 struct file *logfile = NULL;
 struct mutex mtx;
 struct work_struct  log_work;
 struct delayed_work delay_work;
+
+inline void logfile_init_name(void) {
+    ktime_t t = UTC_BY_SEC;
+    struct rtc_time tm;
+    rtc_time_to_tm(t, &tm);
+    sprintf(logfilename, "%04d-%02d-%02d.log", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+}
+
 
 void work_func(struct work_struct *pwork) {
 
@@ -173,7 +182,6 @@ static bool check_nat_tranform_out(struct sk_buff *skb) {
             printk("NAT OUT TRANFORM");
             *ip_ptr = htonl(p->natitem.external_ip);
             *port_ptr = htons(p->natitem.external_port);
-            printk("Ipsummed %u", (skb->ip_summed));
             tcpHeader->check = 0;
             ipHeader->check = 0;
             ipHeader->check = ip_fast_csum(ipHeader, ipHeader->ihl);
@@ -199,7 +207,7 @@ static bool check_nat_tranform_out(struct sk_buff *skb) {
                     data_checksum = csum_partial(page + frag_offset, frag_len, 0);
                 }
             }
-            printk("datalen %08x\ndata_checksum %08x", datalen, data_checksum);
+            /* printk("datalen %08x\ndata_checksum %08x", datalen, data_checksum); */
             tcpHeader->check = tcp_v4_check(tcp_len, ipHeader->saddr, ipHeader->daddr,
                     csum_partial(tcpHeader, tcp_len, data_checksum));
             skb->ip_summed = CHECKSUM_UNNECESSARY;
@@ -253,7 +261,7 @@ static uint32_t check_icmp_status(const struct sk_buff *skb, bool isIn) {
         }
         return NF_ACCEPT;
     } else {
-        logmsgList_add("FIREWALL DENY A ICMP PKT");
+        LOG_WARN("FIREWALL DENY A ICMP PKT", NULL);
         return NF_DROP;
     }
 }
@@ -295,7 +303,7 @@ static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
         statehashTable_add(&temp);
         return NF_ACCEPT;
     } else {
-        logmsgList_add("FIREWALL DENY A UDP PKT");
+        LOG_WARN("FIREWALL DENY A UDP PKT", NULL);
         return NF_DROP;
     }
 }
@@ -336,7 +344,7 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
                 retItemptr->state = stateTemp;
             }
         } else {
-            logmsgList_add("Wrong TCP State %d Recv %d isIn: %d", retItemptr->state, temp.state, isIn);
+            LOG_WARN("Wrong TCP State %d Recv %d isIn: %d", retItemptr->state, temp.state, isIn);
             return NF_DROP;
         }
         return NF_ACCEPT;
@@ -387,7 +395,6 @@ static uint32_t test_nf_post_routing(void *priv, struct sk_buff *skb, const stru
     /* printk("in  name : %s", state->in->name); */
     uint32_t ret;
     const struct iphdr *ipheader = ip_hdr(skb);
-    printk("post pid %u", current->pid);
     switch (ipheader->protocol) {
         case ICMP:
             return check_icmp_status(skb, false);
@@ -423,19 +430,16 @@ static struct nf_hook_ops test_nf_ops[] = {
 };
 
 static int __net_init test_netfilter_init(void) {
-    RuleTableItem item = {
-        .protocol = 0, .action = 1,
-        .dst_port = 0, .src_port = 0,
-        .dst_ip = 0, .src_ip = 0,
-        .dst_cidr = 0,
-    };
 
-    logfile = filp_open("test.log", O_WRONLY|O_CREAT|O_APPEND, S_IROTH|S_IRGRP|S_IRUSR|S_IWUSR);
+    logfile_init_name();
+
+    logfile = filp_open(logfilename, O_WRONLY|O_CREAT|O_APPEND, S_IROTH|S_IRGRP|S_IRUSR|S_IWUSR);
     if (IS_ERR(logfile)) printk("create file error");
 
     nlsock = netlink_kernel_create(&init_net, USER_MSG, &cfg);
     if (NULL == nlsock) {
         printk("SOCK CREATE ERROR");
+        LOG_ERROR("NETLINK SOCK CREATE FAILED", NULL);
         return -1;
     }
     printk("SOCK CREATE SUCCESS");
@@ -444,14 +448,6 @@ static int __net_init test_netfilter_init(void) {
     spin_lock_init(&stateHashTable_lock);
 
     startTimeStamp = nowBysec();
-    
-    item.action = 1;
-    item.protocol = ICMP;
-    item.src_cidr = 32;
-    item.dst_cidr = 32;
-    item.src_ip = 3232274433;
-    item.dst_ip = 3232274579;
-    ruleList_add(&item);
 
     mutex_init(&mtx);
 

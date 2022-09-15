@@ -6,15 +6,31 @@
 #include <linux/xxhash.h>
 #include <linux/slab.h>
 #include <linux/icmp.h>
+#include <linux/rtc.h>
+#include <linux/timex.h>
+#include <linux/timer.h>
+#include <linux/timekeeping.h>
 #include "sharedstruct.h"
 
 
 // Hash Table Config
-#define HASHBITS 10
+#define HASHBITS (10)
 #define HTABSIZE (1 << HASHBITS)
 #define HASHMASK ((HTABSIZE) - 1)
+
 #define IP_FMT_ARGS(ip) \
     (((uint8_t*)&(ip))[3]), (((uint8_t*)&(ip))[2]), (((uint8_t*)&(ip))[1]), (((uint8_t*)&(ip))[0])
+
+#define UTC_BY_SEC (ktime_get_real_seconds() - RTC_TIMESTAMP_BEGIN_1900/NSEC_PER_SEC + 8*3600)
+
+#define LOG_INFO(fmt, ...) \
+    logmsgList_add("\033[37m[INFO]\033[0m "fmt, __VA_ARGS__)
+
+#define LOG_WARN(fmt, ...) \
+    logmsgList_add("\033[33m[WARN]\033[0m "fmt, __VA_ARGS__)
+
+#define LOG_ERROR(fmt, ...) \
+    logmsgList_add("\033[31m[ERROR]\033[0m "fmt, __VA_ARGS__)
 
 #define stateTable_entry(pos)    hlist_entry(pos, st_hashlistNode, hlistNode)
 #define natList_entry(pos)       list_entry(pos, natlistNode, listnode)
@@ -71,9 +87,10 @@ inline uint32_t nowBysec(void) {
 }
 
 static void log_write(void* buf, uint32_t len) {
+    int64_t ret;
     loff_t pos = 0;
     mm_segment_t old_fs = get_fs();
-    int64_t ret;
+
     set_fs(KERNEL_DS);
 
     ret = vfs_write(logfile, buf, len, &pos);
@@ -95,17 +112,23 @@ static bool logmsgList_add(const char* fmtstr, ...) {
     logmsglistNode* logmsgnode;
     va_list argptr;
     int32_t tot_write = 0;
+    ktime_t t = UTC_BY_SEC;
+    struct rtc_time tm_now;
+    rtc_time_to_tm(t, &tm_now);
+
 
     va_start(argptr, fmtstr);
     logmsgnode = (logmsglistNode*)kmalloc(sizeof(logmsglistNode), GFP_KERNEL);
-    memset(logmsgnode->msg, 0, sizeof(logmsgnode->msg));
 
     if (logmsgnode == NULL) {
         printk("logmsg List Add Kmalloc Error");
         return 0;
     }
 
-    tot_write = vsprintf(logmsgnode->msg, fmtstr, argptr);
+    memset(logmsgnode->msg, 0, sizeof(logmsgnode->msg));
+    tot_write = sprintf(logmsgnode->msg, "[%02d:%02d:%02d] ", tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec);
+    tot_write += vsprintf(logmsgnode->msg + tot_write, fmtstr, argptr);
+
     if (tot_write < 0) {
         printk("VSPRINTF ERROR");
         return 0;
@@ -128,6 +151,7 @@ static void logmsgList_destory(void) {
     
     if (!list_empty(&logmsglist)) {
         printk("There are Some Logs Lost");
+        LOG_WARN("EXIT TOO FAST LOGS LOST", NULL);
     }
 
     list_for_each_safe(pos, n, &logmsglist) {
@@ -142,6 +166,7 @@ static bool natList_add(const NatTableItem* cnitem) {
     natnode = (natlistNode*)kmalloc(sizeof(natlistNode), GFP_KERNEL);
     if (natnode == NULL) {
         printk("nat List Add Kmalloc Error");
+        LOG_ERROR("NAT LIST NODE KMALLOC FAILED", NULL);
         return 0;
     }
     
@@ -150,9 +175,9 @@ static bool natList_add(const NatTableItem* cnitem) {
     list_add(&natnode->listnode, &natlist);
     ++tot_nats;
 
-    logmsgList_add("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u  --> NAT ADD", 
-                    IP_FMT_ARGS(cnitem->external_ip), cnitem->external_port,
-                    IP_FMT_ARGS(cnitem->internal_ip), cnitem->internal_port);
+    LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u  --> NAT ADD", 
+                IP_FMT_ARGS(cnitem->external_ip), cnitem->external_port,
+                IP_FMT_ARGS(cnitem->internal_ip), cnitem->internal_port);
     return 1;
 }
 
@@ -170,7 +195,7 @@ static void natList_del(uint32_t idnum) {
             --tot_nats;
 
             printk("nat List Node %u was Del", idnum);
-            logmsgList_add("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u --> NAT DEL", 
+            LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u --> NAT DEL", 
                     IP_FMT_ARGS(p->natitem.external_ip), p->natitem.external_port,
                     IP_FMT_ARGS(p->natitem.internal_ip), p->natitem.internal_port);
             kfree(p);
@@ -199,6 +224,7 @@ static bool ruleList_add(const RuleTableItem* critem) {
     rulenode = (rulelistNode*)kmalloc(sizeof(rulelistNode), GFP_KERNEL);
     if (rulenode == NULL) {
         printk("Rule List Add Kmalloc Error");
+        LOG_ERROR("RULE NODE KMALLOC FAILED", NULL);
         return 0;
     }
     
@@ -206,7 +232,7 @@ static bool ruleList_add(const RuleTableItem* critem) {
     list_add(&rulenode->listnode, &rulelist);
 
     ++tot_rules;
-    logmsgList_add("Src: %u.%u.%u.%u/%u:%u Dst: %u.%u.%u.%u/%u:%u --> RULE ADD",
+    LOG_INFO("Src: %u.%u.%u.%u/%u:%u Dst: %u.%u.%u.%u/%u:%u --> RULE ADD",
             IP_FMT_ARGS(rulenode->ruleitem.src_ip), rulenode->ruleitem.src_cidr, rulenode->ruleitem.src_port,
             IP_FMT_ARGS(rulenode->ruleitem.dst_ip), rulenode->ruleitem.dst_cidr, rulenode->ruleitem.dst_port);
     return 1;
@@ -224,7 +250,7 @@ static void ruleList_del(uint32_t idnum) {
             list_del(pos);
             --tot_rules;
             printk("Rule List Node %u was Del", idnum);
-            logmsgList_add("Src: %u.%u.%u.%u/%u:%u Dst: %u.%u.%u.%u/%u:%u --> RULE DEL",
+            LOG_INFO("Src: %u.%u.%u.%u/%u:%u Dst: %u.%u.%u.%u/%u:%u --> RULE DEL",
                     IP_FMT_ARGS(p->ruleitem.src_ip), p->ruleitem.src_cidr, p->ruleitem.src_port,
                     IP_FMT_ARGS(p->ruleitem.dst_ip), p->ruleitem.dst_cidr, p->ruleitem.dst_port);
             kfree(p);
@@ -296,7 +322,7 @@ static bool check_firewall_rules(const StateTableItem *citem, bool isIn) {
         }
     }
 
-    logmsgList_add("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> NO RULE MATCH",
+    LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> NO RULE MATCH",
             IP_FMT_ARGS(citem->core.foren_ip), citem->core.fport,
             IP_FMT_ARGS(citem->core.local_ip), citem->core.lport, citem->proto);
     return default_rule;
@@ -312,6 +338,7 @@ static bool statehashTable_add(const StateTableItem* citem) {
     listnode = (st_hashlistNode*)kmalloc(sizeof(st_hashlistNode), GFP_KERNEL);
     if (listnode == NULL) {
         printk("Hash Table Add Kmalloc Error");
+        LOG_ERROR("HASH TABLE NODE KMALLOC FAILED", NULL);
         return 0;
     }
     
@@ -321,7 +348,7 @@ static bool statehashTable_add(const StateTableItem* citem) {
     hash_add(st_heads, &(listnode->hlistNode), hash);    
     ++tot_conns;
     // spin_unlock_irqrestore(&stateHashTable_lock, lockflags);
-    logmsgList_add("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> CONN ADD",
+    LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> CONN ADD",
             IP_FMT_ARGS(citem->core.foren_ip), citem->core.fport,
             IP_FMT_ARGS(citem->core.local_ip), citem->core.lport, citem->proto);
     
@@ -332,7 +359,7 @@ static void statetable_node_del(struct hlist_node *pos)  {
     st_hashlistNode *p = stateTable_entry(pos);
     hlist_del(pos);
     --tot_conns;
-    logmsgList_add("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> CONN DEL",
+    LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> CONN DEL",
             IP_FMT_ARGS(p->st_item.core.foren_ip), p->st_item.core.fport,
             IP_FMT_ARGS(p->st_item.core.local_ip), p->st_item.core.lport, p->st_item.proto); 
     kfree(p);
@@ -356,7 +383,7 @@ static struct hlist_node* statehashTable_exist(const StateTableItem* citem) {
                 return pos;
             } else {
                 printk("ONE CONNCTION EXPIRED %u : %u", p->st_item.expire, nowBysec());
-                logmsgList_add("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> CONN EXPIRED",
+                LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> CONN EXPIRED",
                         IP_FMT_ARGS(p->st_item.core.foren_ip), p->st_item.core.fport,
                         IP_FMT_ARGS(p->st_item.core.local_ip), p->st_item.core.lport, p->st_item.proto);
                 statetable_node_del(pos);
