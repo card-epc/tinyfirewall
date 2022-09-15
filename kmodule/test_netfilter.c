@@ -72,8 +72,8 @@ uint32_t tot_conns = 0;
 
 struct file *logfile = NULL;
 struct mutex mtx;
-struct work_struct log_work;
-
+struct work_struct  log_work;
+struct delayed_work delay_work;
 
 void work_func(struct work_struct *pwork) {
 
@@ -81,13 +81,17 @@ void work_func(struct work_struct *pwork) {
 
         logmsglistNode *node = logmsgList_entry(logmsglist.next);
         
-        printk("logMSG: %s", node->msg);
+        /* printk("logMSG: %s", node->msg); */
+        log_write(node->msg, strlen(node->msg));
 
         mutex_lock(&mtx);
         list_del(logmsglist.next);
         mutex_unlock(&mtx);
 
         kfree(node);
+    }
+    if (!list_empty(&logmsglist)) {
+        schedule_delayed_work(&delay_work, msecs_to_jiffies(1));    
     }
 }
 
@@ -235,7 +239,6 @@ static uint32_t check_icmp_status(const struct sk_buff *skb, bool isIn) {
     }
 
 
-    logmsgList_add("ICMP", 4);
     exist_pos = statehashTable_exist(&temp);
     if (exist_pos) {
         retItemptr = &stateTable_entry(exist_pos)->st_item;
@@ -243,14 +246,14 @@ static uint32_t check_icmp_status(const struct sk_buff *skb, bool isIn) {
         printk("A ICMP CONNETION EXPIRED UPDATE TO %u", retItemptr->expire);
         return NF_ACCEPT;
     } else if(check_firewall_rules(&temp, isIn)) {
-        printk("PASS FIREWALL");
         if (temp.state == ICMP_REQUEST) {
             temp.expire = nowBysec() + ICMP_DELAY;
-            printk("EXPIRED TIME %u", temp.expire);
+            printk("ICMP EXPIRED TIME %u", temp.expire);
             statehashTable_add(&temp);
         }
         return NF_ACCEPT;
     } else {
+        logmsgList_add("FIREWALL DENY A ICMP PKT");
         return NF_DROP;
     }
 }
@@ -292,6 +295,7 @@ static uint32_t check_udp_status(const struct sk_buff* skb, bool isIn) {
         statehashTable_add(&temp);
         return NF_ACCEPT;
     } else {
+        logmsgList_add("FIREWALL DENY A UDP PKT");
         return NF_DROP;
     }
 }
@@ -317,7 +321,6 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
     }
 
     /* log_write("TCP\n", 4); */
-    logmsgList_add("TCP", 3);
     exist_pos = statehashTable_exist(&temp);
     if (exist_pos) {
         retItemptr = &stateTable_entry(exist_pos)->st_item;
@@ -326,7 +329,6 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
         if (stateTemp != -1) {
             if (stateTemp == CLOSED) {
                 statetable_node_del(exist_pos);
-                logmsgList_add("CONNETION DEL ONE", 17);
             } else {
                 temp.expire = nowBysec() + TCP_DELAY;
                 if (retItemptr->state != stateTemp)
@@ -334,7 +336,7 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
                 retItemptr->state = stateTemp;
             }
         } else {
-            printk("Wrong TCP State %d Recv %d isIn: %d", retItemptr->state, temp.state, isIn);
+            logmsgList_add("Wrong TCP State %d Recv %d isIn: %d", retItemptr->state, temp.state, isIn);
             return NF_DROP;
         }
         return NF_ACCEPT;
@@ -350,12 +352,6 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
         return NF_DROP;
     }
     
-    printk("*******TCP********");
-    printIPaddr(skb);
-    printTransPort(skb);
-    printTcpFlags(skb);
-    printk("*******END********");
-    printk(" ");
     return NF_ACCEPT;
 }
 
@@ -460,8 +456,7 @@ static int __net_init test_netfilter_init(void) {
     mutex_init(&mtx);
 
     INIT_WORK(&log_work, work_func);
-
-    logmsgList_add("HELLO", 5);
+    INIT_DELAYED_WORK(&delay_work, work_func);
 
     return nf_register_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }

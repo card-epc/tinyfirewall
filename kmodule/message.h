@@ -138,10 +138,6 @@ static void recvfromuser(struct sk_buff* skb) {
                 break;
                 
         }
-        // if (data != NULL) {
-        //     printk("PAYLOAD %d", payload_len);
-        //     sendtouser(str, strlen(str), nl_hdr->nlmsg_pid);
-        // }
     }
 }
 

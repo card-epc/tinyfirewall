@@ -3,3 +3,4 @@
 *.ko*
 *.order
 *.symvers
+*.log
