@@ -2,6 +2,8 @@
 #define PARSER_HPP
 
 #include <iostream>
+#include <string>
+#include <string_view>
 #include <unistd.h>
 #include <sys/types.h>
 #include <cstring>
@@ -11,6 +13,14 @@ class Parser {
     public:
         virtual void ParseMsg(const void* data, uint32_t len) = 0;
         virtual ~Parser() {  }
+
+    protected:
+        std::string ip2str(uint32_t ip) {
+            char msg[18] = { 0 };
+            int tot = sprintf(msg, "%u.%u.%u.%u",
+                    (ip>>24), ((ip>>16)&0xff), (ip>>8)&0xff, (ip&0xff));
+            return std::string(msg, tot);
+        }
 };
 
 class NoParser: public Parser {
@@ -35,8 +45,8 @@ class NatItemParser: public Parser {
             for (uint32_t idx = 0; idx < len; idx+=natItemlen) {
                 memcpy(&item, ((uint8_t*)data) + idx, natItemlen);
                 printf("num: %u\n", idx/natItemlen);
-                printf("Internal ip: %u, External ip: %u\n", item.internal_ip, item.external_ip);
-                printf("Internal port: %u, External port: %u\n", item.internal_port, item.external_port);
+                printf("Internal: %s:%u <--> External: %s:%u\n", ip2str(item.internal_ip).c_str(), item.internal_port, 
+                                ip2str(item.external_ip).c_str(), item.external_port);
             }
         }
 };
@@ -51,10 +61,9 @@ class RuleItemParser : public Parser {
             for (uint32_t idx = 0; idx < len; idx+=ruleItemlen) {
                 memcpy(&item, ((uint8_t*)data) + idx, ruleItemlen);
                 printf("num: %u\n", idx/ruleItemlen);
-                printf("Src ip: %u, Dst ip: %u\n", item.src_ip, item.dst_ip);
-                printf("Src port: %u, Dst port: %u\n", item.src_port, item.dst_port);
-                printf("src cidr: %u, Dst cidr: %u\n", item.src_cidr, item.dst_cidr);
-                printf("protocol: %u, Action: %u\n", item.protocol, item.action);
+                printf("Src: %s/%d:%u, Dst: %s/%d:%u ", ip2str(item.src_ip).c_str(), item.src_cidr, item.src_port,
+                                                    ip2str(item.dst_ip).c_str(), item.dst_cidr, item.dst_port);
+                printf("Protocol: %s, Action: %s\n", proto_str[item.protocol], rule_str[item.action]);
             }
         }
 };
@@ -68,10 +77,11 @@ class ConnectionParser: public Parser {
             printf("ALL Conns: %u\n", nums);
             for (uint32_t idx = 0; idx < len; idx+=stateItemlen) {
                 memcpy(&item, ((uint8_t*)data) + idx, stateItemlen);
+                if (item.expire == 0) { continue; }
                 printf("num: %u\n", idx / stateItemlen);
-                printf("Foreign ip: %u, Local ip: %u\n", item.core.foren_ip, item.core.local_ip);
-                printf("Foreign port: %u, Local port: %u\n", item.core.fport, item.core.lport);
-                printf("Protocol: %u, Expired: %u\n", item.proto, item.expire);
+                printf("Foreign: %s:%u, Local: %s:%u ", ip2str(item.core.foren_ip).c_str(), item.core.fport,
+                        ip2str(item.core.local_ip).c_str(), item.core.lport);
+                printf("Protocol: %s, Expired: %u\n", proto_str[item.proto], item.expire);
             }
         }
 };
