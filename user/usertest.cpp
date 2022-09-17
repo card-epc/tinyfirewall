@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cerrno>
 #include <cassert>
+#include "config.h"
 #include "message.hpp"
  
 #define MSG_LEN 100
@@ -13,22 +14,14 @@
 int main(int argc, char *argv[])
 {
     const char *data = "\0hello This is User NoAlign";
+    RuleFile rf;
+
     KernelLink k(new NoParser);
     CmdManager cmgr;
     msg_send_format<std::max(ruleItemlen, natItemlen)> send_data;
     cmgr.parseUserOptions(argc, argv);
     send_data.type = cmgr.getOptType();
     // std::cout << cmgr.getOptType() << std::endl;
-    // RuleTableItem temp = {
-    //     .src_ip = 0,
-    //     .dst_ip = 0,
-    //     .src_port = 1234,
-    //     .dst_port = 5678,
-    //     .src_cidr = 0,
-    //     .dst_cidr = 0,
-    //     .protocol = 0,
-    //     .action = 1,
-    // };
     // NatTableItem tmp = {
     //     .internal_ip = 3232274579,
     //     .external_ip = 3232274579,
@@ -36,18 +29,22 @@ int main(int argc, char *argv[])
     //     .external_port = 4444
     // };
 
+    RuleTableItem rtemp;
+    NatTableItem  ntemp;
     if (send_data.type == RULE_ADD) {
-        RuleTableItem temp = cmgr.generateRuleItem();
-        memcpy(send_data.data, &temp, ruleItemlen);
+        rtemp = cmgr.generateRuleItem();
+        memcpy(send_data.data, &rtemp, ruleItemlen);
     } else if (send_data.type == NAT_ADD) {
-        NatTableItem temp = cmgr.generateNatItem();
-        memcpy(send_data.data, &temp, natItemlen);
+        ntemp = cmgr.generateNatItem();
+        memcpy(send_data.data, &ntemp, natItemlen);
     }
 
     switch (send_data.type) {
         case RULE_ADD:
             printf("ADD RULE\n");
             k.sendMsgtoKernel(&send_data, ruleItemlen + 1);
+            printf("If append to this rule to file [Y/N]\n");
+            if (getchar() == 'Y') rf.writeRuletoFile(rtemp);
             break;
         case RULE_SHOW:
             printf("RULE_SHOW\n");
@@ -83,6 +80,13 @@ int main(int argc, char *argv[])
             break;
         case LOG:
             printf("LOG\n");
+            break;
+        case RULE_INIT:
+            send_data.type = RULE_ADD;
+            for (auto&& item : rf.parseFile()) {
+                memcpy(send_data.data, &item, ruleItemlen);
+                k.sendMsgtoKernel(&send_data, ruleItemlen + 1);
+            }
             break;
         default:
             printf("DEFAULT\n");

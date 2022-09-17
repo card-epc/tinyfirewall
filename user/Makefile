@@ -1,4 +1,4 @@
 all:
-	@g++ *.cpp -std=c++17
+	@g++ *.cpp -g -std=c++17
 clean:
 	rm a.out

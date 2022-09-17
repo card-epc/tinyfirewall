@@ -19,7 +19,7 @@
 #define HASHMASK ((HTABSIZE) - 1)
 
 #define IP_FMT_ARGS(ip) \
-    (((uint8_t*)&(ip))[3]), (((uint8_t*)&(ip))[2]), (((uint8_t*)&(ip))[1]), (((uint8_t*)&(ip))[0])
+    (((ip)>>24)&0xff), (((ip)>>16)&0xff), (((ip)>>8)&0xff), ((ip)&0xff)
 
 #define UTC_BY_SEC (ktime_get_real_seconds() - RTC_TIMESTAMP_BEGIN_1900/NSEC_PER_SEC + 8*3600)
 

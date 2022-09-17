@@ -1,0 +1,10 @@
+# RULES FORMAT AS FOLLOW 
+# different fields are splited by space or tab, and all fields must be filled
+# '#' is the only code comment
+# fields order : 
+# SRC_IP  SRC_CIDR  SRC_PORT  DST_IP  DST_CIDR  DST_PORT  PROTOTCOL  ACTION
+# PORT 0 represent any port
+# PROTOTCOL is protocol number, 0 use for any
+# ACTION 0 is deny, 1 is accept
+
+192.168.152.1 32 0 192.168.152.147 32 0 1 0

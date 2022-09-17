@@ -22,10 +22,17 @@
 #define SWAP_VALUE(a, b) \
     { static_assert(__same_type(a, b), "Different Type");typeof(a) _tempc_ = (a); (a) = (b); (b) = _tempc_; }
 
-enum MSG_TYPE { 
-    RULE_ADD = 1, RULE_SHOW, RULE_DEL, 
-    NAT_ADD, NAT_SHOW, NAT_DEL,
-    CONNETION_SHOW, LOG
+enum MSG_TYPE 
+{ 
+    RULE_ADD = 1, 
+    RULE_SHOW, 
+    RULE_DEL, 
+    NAT_ADD, 
+    NAT_SHOW, 
+    NAT_DEL,
+    CONNETION_SHOW, 
+    LOG,
+    RULE_INIT
 };
 
 typedef struct {
@@ -64,5 +71,8 @@ const uint32_t corelen = sizeof(coreMsg);
 const uint32_t natItemlen = sizeof(NatTableItem);
 const uint32_t ruleItemlen = sizeof(RuleTableItem);
 const uint32_t stateItemlen = sizeof(StateTableItem);
+
+const char* proto_str[20] = { "ANY", "ICMP", "","","","","TCP","","","","","","","","","","","UDP"};
+const char* rule_str[2] = { "DENY", "ACCEPT" };
 
 #endif /* ifndef COMMON_H */

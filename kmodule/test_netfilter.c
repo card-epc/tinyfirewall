@@ -18,8 +18,6 @@
 #include <linux/icmp.h>
 #include "message.h"
 
-typedef struct hlist_head st_hashlistHead;
-
 
 struct netlink_kernel_cfg cfg = {
     .input = recvfromuser,
@@ -70,7 +68,7 @@ uint32_t tot_rules = 0;
 uint32_t tot_nats  = 0;
 uint32_t tot_conns = 0;
 
-char   logfilename[20];
+char   logfilename[30];
 struct file *logfile = NULL;
 struct mutex mtx;
 struct work_struct  log_work;
@@ -80,7 +78,7 @@ inline void logfile_init_name(void) {
     ktime_t t = UTC_BY_SEC;
     struct rtc_time tm;
     rtc_time_to_tm(t, &tm);
-    sprintf(logfilename, "%04d-%02d-%02d.log", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+    sprintf(logfilename, "log/%04d-%02d-%02d.log", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 }
 
 
@@ -357,6 +355,7 @@ static uint32_t check_tcp_status(const struct sk_buff* skb, int8_t trans_buf[10]
         statehashTable_add(&temp);
         return NF_ACCEPT;
     } else {
+        LOG_WARN("FIREWALL DENY A TCP PKT", NULL);
         return NF_DROP;
     }
     

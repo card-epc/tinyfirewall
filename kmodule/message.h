@@ -71,14 +71,18 @@ static void sendConnToUser(void) {
     struct hlist_node *pos, *n;
 
     for (i = 0; i < HTABSIZE; i++) {
-        hlist_for_each_safe(pos, n, &st_heads[i]){
+        hlist_for_each_safe(pos, n, &st_heads[i]) {
             p = stateTable_entry(pos);
-            if (p->st_item.expire < timenow) p->st_item.expire = 0;
-            memcpy(tot_items + idx++, &p->st_item, stateItemlen);
-            printk("Head %d has send to the user ...\n", i);
+            if (p->st_item.expire < timenow) { 
+                p->st_item.expire = 0;
+                printk("Head %d doesn't send to the user ... because of expire\n", i);
+            } else {
+                memcpy(tot_items + idx++, &p->st_item, stateItemlen);
+                printk("Head %d has send to the user ...\n", i);
+            }
         }
     }
-    sendtouser((void*)tot_items, sizeof(tot_items));
+    sendtouser((void*)tot_items, idx * stateItemlen);
 }
 
 static void recvfromuser(struct sk_buff* skb) {

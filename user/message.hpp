@@ -31,7 +31,7 @@ struct msg_recv_format {
     uint8_t data[datalen];
 };
 
-const char *single_option = "l:d:a:p:h";
+const char *single_option = "l:d:a:p:hi";
 static struct option long_options[] =
 {  
     {"list",     required_argument, NULL, 'l'},
@@ -47,6 +47,7 @@ static struct option long_options[] =
     {"scidr",    required_argument, NULL, '5'},
     {"dcidr",    required_argument, NULL, '6'},
     {"id",       required_argument, NULL, '7'},
+    {"init",     no_argument,       NULL, 'i'},
     {NULL,       no_argument,       NULL,  0 },
 }; 
 
@@ -206,8 +207,8 @@ void CmdManager::setOptType(int opt, const char* str) {
         type_ = opt;
     } else if (args == "CONN" || args == "conn") {
         type_ = (opt == 2) ? CONNETION_SHOW : 0;
-    } else {
-        type_ = 0;
+    } else if (args == "i") {
+        type_ = RULE_INIT;
     }
 }
 
@@ -250,6 +251,7 @@ void CmdManager::parseUserOptions(int argc, char *argv[]) {
                 break;
             case 'p':
                 printf("protocol = %s\n",optarg);
+                setProtocol(optarg);
                 break;
             case '0':
                 printf("action = %s\n",optarg);
@@ -286,6 +288,9 @@ void CmdManager::parseUserOptions(int argc, char *argv[]) {
             case 'h':
                 printUsage();
                 _exit(0);
+            case 'i':
+                setOptType(0, "i");
+                break;
             case '?':
                 printUsage();
                 _exit(0);
