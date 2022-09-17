@@ -485,3 +485,6 @@ module_init(test_netfilter_init);
 module_exit(test_netfilter_exit);
 
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("card-epc");
+MODULE_DESCRIPTION("Tiny Firewall");
+MODULE_VERSION("V0.1");
