@@ -4,3 +4,7 @@
 *.order
 *.symvers
 *.log
+.gitignore
+test.sh
+.gdb*
+fwctl
