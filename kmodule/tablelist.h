@@ -74,6 +74,7 @@ extern unsigned long   lockflags;
 extern spinlock_t stateHashTable_lock;
 extern spinlock_t natList_lock;
 extern spinlock_t ruleList_lock;
+extern struct semaphore log_sem;
 
 const uint32_t hashseed = 0xabcd1234;
 
@@ -137,13 +138,13 @@ static bool logmsgList_add(const char* fmtstr, ...) {
     }
     logmsgnode->msg[tot_write] = '\n';
 
-
     mutex_lock(&mtx);
     list_add_tail(&logmsgnode->listnode, &logmsglist);
     mutex_unlock(&mtx);
 
     va_end(argptr);
-    schedule_work(&log_work);
+    up(&log_sem);
+
     return 1;
 }
 

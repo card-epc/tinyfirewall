@@ -12,7 +12,9 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/checksum.h>
+#include <linux/sem.h>
 #include <linux/mutex.h>
+#include <linux/semaphore.h>
 #include <linux/hashtable.h>
 #include <linux/types.h>
 #include <linux/icmp.h>
@@ -73,8 +75,9 @@ uint32_t tot_conns = 0;
 char   logfilename[30];
 struct file *logfile = NULL;
 struct mutex mtx;
-struct work_struct  log_work;
-struct delayed_work delay_work;
+bool   isStop = false;
+struct semaphore log_sem;
+struct task_struct* log_task;
 
 inline void logfile_init_name(void) {
     ktime_t t = UTC_BY_SEC;
@@ -83,25 +86,26 @@ inline void logfile_init_name(void) {
     sprintf(logfilename, "log/%04d-%02d-%02d.log", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 }
 
+int log_func(void* d) {
+    while (1) {
+        if (down_interruptible(&log_sem) != -EINTR && !isStop) {
+            if (!list_empty(&logmsglist)) {
 
-void work_func(struct work_struct *pwork) {
+                logmsglistNode *node = logmsgList_entry(logmsglist.next);
+                
+                /* printk("logMSG: %s", node->msg); */
+                log_write(node->msg, strlen(node->msg));
 
-    if (!list_empty(&logmsglist)) {
+                mutex_lock(&mtx);
+                list_del(logmsglist.next);
+                mutex_unlock(&mtx);
 
-        logmsglistNode *node = logmsgList_entry(logmsglist.next);
-        
-        /* printk("logMSG: %s", node->msg); */
-        log_write(node->msg, strlen(node->msg));
-
-        mutex_lock(&mtx);
-        list_del(logmsglist.next);
-        mutex_unlock(&mtx);
-
-        kfree(node);
+                kfree(node);
+            }
+        }
+        if (isStop) { break; }
     }
-    if (!list_empty(&logmsglist)) {
-        schedule_delayed_work(&delay_work, msecs_to_jiffies(1));    
-    }
+    return 1;
 }
 
 
@@ -449,13 +453,11 @@ static int __net_init test_netfilter_init(void) {
     spin_lock_init(&stateHashTable_lock);
     spin_lock_init(&natList_lock);
     spin_lock_init(&ruleList_lock);
-
+    sema_init(&log_sem, 0);
+    log_task = kthread_run(log_func, NULL, "LOG");
     startTimeStamp = nowBysec();
 
     mutex_init(&mtx);
-
-    INIT_WORK(&log_work, work_func);
-    INIT_DELAYED_WORK(&delay_work, work_func);
 
     return nf_register_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
@@ -470,6 +472,10 @@ static void __net_exit test_netfilter_exit(void) {
     ruleList_destory();
     natList_destory();
     logmsgList_destory();
+
+    isStop = true;
+    up(&log_sem);
+    kthread_stop(log_task);
     nf_unregister_net_hooks(&init_net, test_nf_ops, ARRAY_SIZE(test_nf_ops));
 }
 

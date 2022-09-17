@@ -1,7 +1,6 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-
 #define USER_MSG     24
 #define NETLINK_USER 24
 #define STATIC_PORT  50
