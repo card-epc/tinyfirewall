@@ -58,6 +58,8 @@ static int8_t out_tcp_state_tranform_buf[10][6] = {
 
 
 spinlock_t stateHashTable_lock;
+spinlock_t ruleList_lock;
+spinlock_t natList_lock;
 unsigned long lockflags;
 
 struct sock* nlsock = NULL;
@@ -445,6 +447,8 @@ static int __net_init test_netfilter_init(void) {
     statehashTable_init();
 
     spin_lock_init(&stateHashTable_lock);
+    spin_lock_init(&natList_lock);
+    spin_lock_init(&ruleList_lock);
 
     startTimeStamp = nowBysec();
 

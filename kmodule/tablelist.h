@@ -72,6 +72,8 @@ extern struct work_struct log_work;
 
 extern unsigned long   lockflags;
 extern spinlock_t stateHashTable_lock;
+extern spinlock_t natList_lock;
+extern spinlock_t ruleList_lock;
 
 const uint32_t hashseed = 0xabcd1234;
 
@@ -172,8 +174,10 @@ static bool natList_add(const NatTableItem* cnitem) {
     
     memcpy(&natnode->natitem, cnitem, sizeof(NatTableItem));
 
+    spin_lock(&natList_lock);
     list_add(&natnode->listnode, &natlist);
     ++tot_nats;
+    spin_unlock(&natList_lock);
 
     LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u  --> NAT ADD", 
                 IP_FMT_ARGS(cnitem->external_ip), cnitem->external_port,
@@ -191,8 +195,10 @@ static void natList_del(uint32_t idnum) {
         if (idx == 0) {
             p = natList_entry(pos);
 
+            spin_lock(&natList_lock);
             list_del(pos);
             --tot_nats;
+            spin_unlock(&natList_lock);
 
             printk("nat List Node %u was Del", idnum);
             LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u --> NAT DEL", 
@@ -227,11 +233,12 @@ static bool ruleList_add(const RuleTableItem* critem) {
         LOG_ERROR("RULE NODE KMALLOC FAILED", NULL);
         return 0;
     }
-    
     memcpy(&rulenode->ruleitem, critem, sizeof(RuleTableItem));
-    list_add(&rulenode->listnode, &rulelist);
 
+    spin_lock(&ruleList_lock);
+    list_add(&rulenode->listnode, &rulelist);
     ++tot_rules;
+    spin_unlock(&ruleList_lock);
     LOG_INFO("Src: %u.%u.%u.%u/%u:%u Dst: %u.%u.%u.%u/%u:%u --> RULE ADD",
             IP_FMT_ARGS(rulenode->ruleitem.src_ip), rulenode->ruleitem.src_cidr, rulenode->ruleitem.src_port,
             IP_FMT_ARGS(rulenode->ruleitem.dst_ip), rulenode->ruleitem.dst_cidr, rulenode->ruleitem.dst_port);
@@ -247,8 +254,12 @@ static void ruleList_del(uint32_t idnum) {
     list_for_each_safe(pos, n, &rulelist) {
         if (idx == 0) {
             p = ruleList_entry(pos);
+
+            spin_lock(&ruleList_lock);
             list_del(pos);
             --tot_rules;
+            spin_unlock(&ruleList_lock);
+
             printk("Rule List Node %u was Del", idnum);
             LOG_INFO("Src: %u.%u.%u.%u/%u:%u Dst: %u.%u.%u.%u/%u:%u --> RULE DEL",
                     IP_FMT_ARGS(p->ruleitem.src_ip), p->ruleitem.src_cidr, p->ruleitem.src_port,
@@ -345,8 +356,12 @@ static bool statehashTable_add(const StateTableItem* citem) {
     memcpy(&listnode->st_item, citem, stateItemlen);
 
     // spin_lock_irqsave(&stateHashTable_lock, lockflags);
+    spin_lock(&stateHashTable_lock);
+
     hash_add(st_heads, &(listnode->hlistNode), hash);    
     ++tot_conns;
+
+    spin_unlock(&stateHashTable_lock);
     // spin_unlock_irqrestore(&stateHashTable_lock, lockflags);
     LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> CONN ADD",
             IP_FMT_ARGS(citem->core.foren_ip), citem->core.fport,
@@ -357,8 +372,12 @@ static bool statehashTable_add(const StateTableItem* citem) {
 
 static void statetable_node_del(struct hlist_node *pos)  { 
     st_hashlistNode *p = stateTable_entry(pos);
+
+    spin_lock(&stateHashTable_lock);
     hlist_del(pos);
     --tot_conns;
+    spin_unlock(&stateHashTable_lock);
+
     LOG_INFO("F: %u.%u.%u.%u:%u L: %u.%u.%u.%u:%u P: %u --> CONN DEL",
             IP_FMT_ARGS(p->st_item.core.foren_ip), p->st_item.core.fport,
             IP_FMT_ARGS(p->st_item.core.local_ip), p->st_item.core.lport, p->st_item.proto); 
