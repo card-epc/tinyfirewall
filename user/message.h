@@ -16,8 +16,8 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
-#include "parser.hpp"
-#include "../kmodule/sharedstruct.h"
+#include "parser.h"
+#include "kmodule/sharedstruct.h"
 
 template<uint32_t datalen>
 struct msg_send_format {
@@ -83,7 +83,7 @@ class CmdManager final {
         uint8_t getIdnum() { return idnum_; }
         uint8_t getOptType() { 
             if (type_ == 0) {
-                std::cerr << "DON'T GET OPT TYPE" << std::endl;
+                std::cerr << "\033[32mDON'T GET OPT TYPE\033[0m" << std::endl;
                 exit(0); 
             } else {
                 return type_;

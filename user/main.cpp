@@ -5,7 +5,7 @@
 #include <cerrno>
 #include <cassert>
 #include "config.h"
-#include "message.hpp"
+#include "message.h"
  
 #define MSG_LEN 100
 #define MAX_PLOAD 100
@@ -13,7 +13,6 @@
  
 int main(int argc, char *argv[])
 {
-    const char *data = "\0hello This is User NoAlign";
     RuleFile rf;
 
     KernelLink k(new NoParser);
@@ -21,13 +20,6 @@ int main(int argc, char *argv[])
     msg_send_format<std::max(ruleItemlen, natItemlen)> send_data;
     cmgr.parseUserOptions(argc, argv);
     send_data.type = cmgr.getOptType();
-    // std::cout << cmgr.getOptType() << std::endl;
-    // NatTableItem tmp = {
-    //     .internal_ip = 3232274579,
-    //     .external_ip = 3232274579,
-    //     .internal_port = 8888,
-    //     .external_port = 4444
-    // };
 
     RuleTableItem rtemp;
     NatTableItem  ntemp;

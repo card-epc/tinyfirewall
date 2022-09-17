@@ -58,6 +58,8 @@ static int8_t out_tcp_state_tranform_buf[10][6] = {
     { -1, -1, -1, CLOSED, -1, -1 }                          // LAST_ACK
 };
 
+// Default Rule (if Rule List don't match)
+bool default_rule = true;
 
 spinlock_t stateHashTable_lock;
 spinlock_t ruleList_lock;
@@ -67,7 +69,6 @@ unsigned long lockflags;
 struct sock* nlsock = NULL;
 
 uint32_t startTimeStamp = 0;
-bool default_rule = true;
 uint32_t tot_rules = 0;
 uint32_t tot_nats  = 0;
 uint32_t tot_conns = 0;

@@ -1,4 +1,6 @@
+APP := ../fwctl
+
 all:
-	@g++ *.cpp -g -std=c++17
+	@g++ *.cpp -g -std=c++17 -I ../ -o $(APP)
 clean:
-	rm a.out
+	rm $(APP)
