@@ -1,0 +1,1 @@
+cmd_/home/zsk/tinyfirewall/kmodule/Module.symvers := sed 's/\.ko$$/\.o/' /home/zsk/tinyfirewall/kmodule/modules.order | scripts/mod/modpost -m -a  -o /home/zsk/tinyfirewall/kmodule/Module.symvers -e -i Module.symvers   -T -

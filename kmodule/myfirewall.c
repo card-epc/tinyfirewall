@@ -83,7 +83,7 @@ struct task_struct* log_task;
 inline void logfile_init_name(void) {
     ktime_t t = UTC_BY_SEC;
     struct rtc_time tm;
-    rtc_time_to_tm(t, &tm);
+    rtc_time64_to_tm(t, &tm);
     sprintf(logfilename, "log/%04d-%02d-%02d.log", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 }
 

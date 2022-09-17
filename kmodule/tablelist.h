@@ -92,11 +92,12 @@ inline uint32_t nowBysec(void) {
 static void log_write(void* buf, uint32_t len) {
     int64_t ret;
     loff_t pos = 0;
-    mm_segment_t old_fs = get_fs();
+    // mm_segment_t old_fs = get_fs();
 
-    set_fs(KERNEL_DS);
+    // set_fs(KERNEL_DS);
 
-    ret = vfs_write(logfile, buf, len, &pos);
+    // ret = vfs_write(logfile, buf, len, &pos);
+    ret = kernel_write(logfile, buf, len, &pos);
     if (ret == -EINVAL) {
         printk("VFS WRITE EINVAL");
     } else if (ret != len) {
@@ -105,7 +106,7 @@ static void log_write(void* buf, uint32_t len) {
         printk("Log An Item");
     }
 
-    set_fs(old_fs);
+    // set_fs(old_fs);
 }
 
 static bool logmsgList_add(const char* fmtstr, ...) {
@@ -117,7 +118,7 @@ static bool logmsgList_add(const char* fmtstr, ...) {
     int32_t tot_write = 0;
     ktime_t t = UTC_BY_SEC;
     struct rtc_time tm_now;
-    rtc_time_to_tm(t, &tm_now);
+    rtc_time64_to_tm(t, &tm_now);
 
 
     va_start(argptr, fmtstr);
