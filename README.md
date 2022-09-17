@@ -1,2 +1,2 @@
 # tinyfirewall
-基于 Linux netfilter 的防火墙
+一个基于 Linux 5.x netfilter 的勉强可用防火墙
