@@ -333,14 +333,15 @@ NatTableItem CmdManager::generateNatItem() {
 
 void CmdManager::printUsage() {
 
-    printf( "USAGE: name -l TABLENAME\n"
-            "       name -d TABLENAME --id IDNUM\n"
-            "       name -a TABLENAME --sip SRCIP --dip DSTIP --sport SPORT --dport DPORT --[protocol|scidr|action]\n"
+    printf( "USAGE: fwctl -l TABLENAME\n"
+            "       fwctl -d TABLENAME --id IDNUM\n"
+            "       fwctl -a TABLENAME --sip SRCIP --dip DSTIP --sport SPORT --dport DPORT --[protocol|scidr|action]\n"
             "\nOptions:\n"
             "  --list      -l  list table messages\n"
             "  --delete    -d  delete a table item\n"
             "  --append    -a  append a table item\n"
             "  --help      -h  show this message\n"
+            "  --init      -i  load rule file and add all to fire wall\n"
             "  --sip           set src ip\n"
             "  --dip           set dst ip\n"
             "  --sport         set src port\n"
@@ -350,6 +351,9 @@ void CmdManager::printUsage() {
             "  --dcidr         set dst cidr (DEFAULT 32)\n"
             "  --action        set action   (DEFAULT DENY)\n"
             "  --protocol  -p  set protocol (DEFAULT ANY)\n"
+            "\nDESCRIPTION\n"
+            "  A command must include one of (-l|-d|-a|-i|-h)\n"
+            "  append a rule will ask whether to add the rule to file, only Y for yes\n"
     );
 }
 
