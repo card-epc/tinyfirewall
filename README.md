@@ -48,7 +48,9 @@
 
 ​    CONN 连接表 只能查看
 
-​	NAT 表 增加时必须指定 两个 ip 和 port，规则表 增加时选项内含默认值(port 为 0 是全部端口，cidr 默认 32， protocol 默认 ANY（使用协议号而不是字符串），action 默认 deny（0 deny 1 accept）)
+​	NAT 表 增加时必须指定 两个 ip 和 port，规则表 增加时选项内含默认值(port 为 0 是全部端口，cidr 默认 32， protocol 默认 ANY（使用协议号而不是字符串），action 默认 deny（0 deny 1 accept）) 
+  例如 `./fwctl -a nat --sip=192.168.xxx.xxx --sport=8888 --dip=192.168.xxx.xxx --dport=4444`  
+  实现了增加本地8888到4444的nat转换，当 `nc -l 8888` 时，远程主机可以使用 `nc 192.168.xxx.xxx 4444` 与其正常通信  
 
 ## 测试环境
 
